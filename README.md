@@ -1,4 +1,5 @@
 # Whole Slide Image processing with deep-learning
+![](header.png)
 
 ## Tiling and encoding your WSIs
 
