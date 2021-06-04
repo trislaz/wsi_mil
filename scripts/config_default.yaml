@@ -1,0 +1,14 @@
+wsi: /gpfsdswork/projects/rech/gdg/uub32zv/packages/essais/imagenet/level_5/
+raw_path: /gpfsdsstore/projects/rech/gdg/uub32zv/curie/raw
+table_data: /gpfsdswork/projects/rech/gdg/uub32zv/packages/essais/table_test.csv
+batch_size: 16
+dropout: 0.4
+feature_depth: 512 
+lr: 0.003
+num_workers: 16
+model_name: mhmc_layers
+nb_tiles: 10
+epochs: 2
+target_name: target
+ref_metric: loss
+
