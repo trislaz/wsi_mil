@@ -20,7 +20,6 @@ from .model_hooker import HookerMIL
 from .utils import make_background_neutral, add_titlebox, set_axes_color
 from .model_hooker import HookerMIL
 import os 
-import fire
 
 class BaseVisualizer(ABC):
     def __init__(self, model, path_emb=None):
