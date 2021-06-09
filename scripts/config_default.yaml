@@ -1,6 +1,6 @@
-wsi: /gpfsdswork/projects/rech/gdg/uub32zv/packages/essais/imagenet/level_5/
-raw_path: /gpfsdsstore/projects/rech/gdg/uub32zv/curie/raw
-table_data: /gpfsdswork/projects/rech/gdg/uub32zv/packages/essais/table_test.csv
+wsi: /path/to/the/output/folder/of/main/tiling/tiler/level_n/
+raw_path: /path/to/raw/wsi/data
+table_data: /path/to/master/table.csv
 batch_size: 16
 dropout: 0.4
 feature_depth: 512 
