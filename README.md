@@ -1,5 +1,4 @@
-# Whole Slide Image processing with deep-learning
-![](header.png)
+# Whole Slide Image processing with deep-learning ![](header.png)
 
 In order to use the scripts present in this repository, make sure that you are working in a python environment that satisfies the requirements of
 `requirement.txt`.
@@ -8,8 +7,17 @@ Then, enter the `pkg` folder and install it:
 cd pkg; pip install -e ./
 ```
 
-## Tiling and encoding your WSIs
+With three simple steps, each of them being one command-line action, the package will allow you to 
+train a machine learning algorithm to classify whole slide images in tif, ndpi or svs format.
 
+The three steps are the following:
+1. [Tile and encode your WSIs](#tiling-and-encoding-your-wsis)
+2. [Train machine learning models](#training-a-mil-model-and-using-it)
+3. [Visualize what your models have learned](#visualizing-your-mil-model)
+
+
+## Tiling and encoding your WSIs
+#tiling-encoding
 The first thing to do when processing a WSI is to tile it.
 To do that you will just have to have a directory containing all the WSIs of your dataset.
 *Allowed format are ndpi, svs and tif*
@@ -168,19 +176,19 @@ The outputs of this visualization process are stored in the folder where is loca
 if you used the repetition 0 of the model trained on the split 0.
 This folder contains several sub-folders, namely:
 
-    * `hightiles` *contains the predictive tiles for each value of the target variable.*
-        * `target_value_1`
-            * *tile_0.jpg*
-            * ...
-            * *tile_n_best.jpg*
+* `hightiles` *contains the predictive tiles for each value of the target variable.*
+    * `target_value_1`
+        * *tile_0.jpg*
         * ...
-        * `target_value_n`
-    * `hightiles_encoded` *contains information about the extracted tiles*
-        * *target_value_1_attention.npy* : `n_best x 1` matrix, attention scores of the extracted tiles for the first target value.
-        * *target_value_1_preclassif.npy*: `n_best x D` matrix of the decision embeddings of the tiles.
-        * *target_value_1_scores.npy*: `n_best x 1` matrix, logits of the *target_value_1* of the tiles.
-        * *target_value_1.npy*: `n_best x F` matrix, imagenet or MoCo embeddings of the extracted tiles for the first target value.
-        * ...
+        * *tile_n_best.jpg*
+    * ...
+    * `target_value_n`
+* `hightiles_encoded` *contains information about the extracted tiles*
+    * *target_value_1_attention.npy* : `n_best x 1` matrix, attention scores of the extracted tiles for the first target value.
+    * *target_value_1_preclassif.npy*: `n_best x D` matrix of the decision embeddings of the tiles.
+    * *target_value_1_scores.npy*: `n_best x 1` matrix, logits of the *target_value_1* of the tiles.
+    * *target_value_1.npy*: `n_best x F` matrix, imagenet or MoCo embeddings of the extracted tiles for the first target value.
+    * ...
 
 With `D` the dimension of the last layer of the decision module and `F` the MoCo or
 Imagenet embedding dimension (`F=512` when encoding with a ResNet18).
