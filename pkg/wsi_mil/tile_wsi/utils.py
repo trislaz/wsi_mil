@@ -98,12 +98,18 @@ def get_image(slide, para, numpy=True):
         or a PIL image.
 
     """
-    if len(para) != 5:
-        raise NameError("Not enough parameters...")
-    slide = openslide.open_slide(slide) if isinstance(slide, str) else slide
-    slide = slide.read_region((para[0], para[1]), para[4], (para[2], para[3]))
-    if numpy:
-        slide = np.array(slide)[:, :, 0:3]
+    if isinstance(para, dict):
+        slide = openslide.open_slide(slide) if isinstance(slide, str) else slide
+        slide = slide.read_region((para['x'], para['y']), para['level'], (para['xsize'], para['ysize']))
+        if numpy:
+            slide = np.array(slide)[:, :, 0:3]
+    else:
+        if len(para) != 5:
+            raise NameError("Not enough parameters...")
+        slide = openslide.open_slide(slide) if isinstance(slide, str) else slide
+        slide = slide.read_region((para[0], para[1]), para[4], (para[2], para[3]))
+        if numpy:
+            slide = np.array(slide)[:, :, 0:3]
     return slide
 
 def get_whole_image(slide, level=None, numpy=True):
