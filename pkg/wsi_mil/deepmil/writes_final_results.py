@@ -1,11 +1,10 @@
 """
 Horrible le systeme de soft voting,  refaire entièrement quand fini
 """
-
 from .test import main as main_test
-from functools import reduce
 from .predict import load_model
 from argparse import ArgumentParser
+from functools import reduce
 from sklearn import metrics
 import numpy as np
 from glob import glob
@@ -118,7 +117,7 @@ def compute_metrics(y_true, y_pred, scores, num_class=2):
         metrics_dict['roc_auc'] = metrics.roc_auc_score(y_true=y_true, y_score=scores[:,1])
     return metrics_dict
 
-def main(raw_args):
+def main(raw_args=None):
     parser = ArgumentParser()
     parser.add_argument('--path', default='.', type=str, help='path to the folder where the best models are stored.')
     args = parser.parse_args(raw_args)
@@ -144,5 +143,3 @@ def main(raw_args):
     df_res.to_csv('final_results.csv')
     result_table.to_csv('resuts_table.csv', index=False)
 
-if __name__ == '__main__':
-    main()

@@ -150,6 +150,3 @@ def main(raw_args=None):
     df.to_csv('all_results.csv', index=False)
     df_mean_r.to_csv('mean_over_repeats.csv', index=False)
     df_mean_rt.to_csv('mean_over_tests.csv', index=False)
-
-if __name__ == '__main__':
-    main()

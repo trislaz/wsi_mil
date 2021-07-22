@@ -1,7 +1,7 @@
 from sklearn.model_selection import StratifiedKFold
 import pandas as pd
 from argparse import ArgumentParser
-from deepmil.aide_csv_maker import test_stratif
+from wsi_mil.deepmil.aide_csv_maker import test_stratif
 
 # From a csv table, creates an other csv table with a "test" column, stating in which test fold are each line.
 # The created Kfold is stratified with respect to $target_name, a column of the csv.

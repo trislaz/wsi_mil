@@ -20,24 +20,26 @@ class TileSampler:
         """
         name_wsi, _ = os.path.splitext(os.path.basename(wsi_path))
         name_wsi = name_wsi.split('_embedded')[0]
+        embedded_wsi = np.load(wsi_path)
+        self.total_tiles = embedded_wsi.shape[0]
         if args.sampler == 'dpp':
-            embedded_wsi = np.load(wsi_path)
-            self.dpp = FiniteDPP('likelihood', **{'L_gram_factor': embedded_wsi.T})
+            self.dpp = FiniteDPP('likelihood', **{'L_gram_factor': embedded_wsi[:,:50].T})
             self.dpp.sample_exact_k_dpp(size=args.nb_tiles)
         self.name_wsi = name_wsi
         self.path_wsi = wsi_path
-        path_infomat = os.path.join(info_folder, name_wsi + '_infomat.npy')
-        path_predmap = os.path.join(info_folder, name_wsi + '_predmap.npy' ) if os.path.exists(os.path.join(info_folder, name_wsi + '_predmap.npy' )) else None
-        self.infomat = np.load(path_infomat)
-        self.predmap = np.load(path_predmap) if path_predmap is not None else None
-        self.mask = self.infomat >= 0
-        self.total_tiles = self.mask.sum()
-        # is necessary to apply 0 to the border so that background is always surrounding the image.
-        #self.mask = self._force_background(self.mask)
-        #self.dist = distance_transform_bf(self.mask)
-        path_infodict = os.path.join(info_folder, name_wsi + '_infodict.pickle')
-        with open(path_infodict, 'rb') as f:
-            self.infodict = pickle.load(f)
+        if args.sampler in ['predmap', 'predmap_all']:
+            path_infomat = os.path.join(info_folder, name_wsi + '_infomat.npy')
+            path_predmap = os.path.join(info_folder, name_wsi + '_predmap.npy' ) if os.path.exists(os.path.join(info_folder, name_wsi + '_predmap.npy' )) else None
+            self.infomat = np.load(path_infomat)
+            self.predmap = np.load(path_predmap) if path_predmap is not None else None
+            self.mask = self.infomat >= 0
+            self.total_tiles = self.mask.sum()
+            # is necessary to apply 0 to the border so that background is always surrounding the image.
+            #self.mask = self._force_background(self.mask)
+            #self.dist = distance_transform_bf(self.mask)
+            path_infodict = os.path.join(info_folder, name_wsi + '_infodict.pickle')
+            with open(path_infodict, 'rb') as f:
+                self.infodict = pickle.load(f)
 
     @staticmethod
     def _force_background(mask):
