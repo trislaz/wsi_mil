@@ -70,13 +70,13 @@ def predict(model_path, data_path):
         name = os.path.basename(wsi).replace('.npy', '.tif')
         wsi = preprocessing(wsi, device, model.ipca)
         proba, y_hat = model.predict(wsi)
-        results.append({'filename': name, 'pred': y_hat})
+        results.append({'filename': name, 'pred': y_hat, 'proba':proba})
     results_df = pd.DataFrame(results)
     return results_df
 
 def preprocessing(wsi, device, ipca):
     wsi = np.load(wsi)
-    wsi = ipca.transorm(wsi)
+    wsi = ipca.transform(wsi)
     wsi = torch.Tensor(wsi)
     wsi = wsi.unsqueeze(0)
     wsi = wsi.to(device).float()

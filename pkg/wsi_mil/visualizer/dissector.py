@@ -5,6 +5,7 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 from abc import ABC, abstractmethod
 import skimage
+from skimage import filters
 import matplotlib.patches as patches
 import torch
 from argparse import Namespace
@@ -32,7 +33,7 @@ class BaseVisualizer(ABC):
         # = données contenues dans args.
         self.table = self._load_table(self.model.table_data)
         self.path_emb = self.model.args.wsi if path_emb is None else path_emb
-        self.path_emb_mat = os.path.join(self.path_emb, 'mat')
+        self.path_emb_mat = os.path.join(self.path_emb)
         self.path_raw = self.model.args.raw_path
         self.num_class = self.model.args.num_class
         self.num_heads = self.model.args.num_heads
@@ -52,13 +53,13 @@ class BaseVisualizer(ABC):
 
     def _get_info(self, wsi_ID, path_emb):
         wsi_info_path = os.path.join(path_emb, 'info')
-        infomat = os.path.join(wsi_info_path, wsi_ID + '_infomat.npy')
-        infomat = np.load(infomat)
-        infomat = infomat.T 
+        #infomat = os.path.join(wsi_info_path, wsi_ID + '_infomat.npy')
+        #infomat = np.load(infomat)
+        #infomat = infomat.T 
         with open(os.path.join(wsi_info_path, wsi_ID+ '_infodict.pickle'), "rb") as f:
             infodict = pickle.load(f)
             infodict = self.add_name_to_dict(infodict, wsi_ID) 
-        return {'infomat':infomat, 'paradict': infodict}
+        return {'paradict': infodict}
     
     def add_name_to_dict(self, dico, name):
         """
@@ -94,7 +95,7 @@ class BaseVisualizer(ABC):
         """
         depth = self.model.args.feature_depth
         inp = input_array[:,:depth]
-        inp = self.model.ipca.transform(inp)
+        #inp = self.model.ipca.transform(inp)
         inp = torch.Tensor(inp)
         inp = inp.unsqueeze(0) if expand_bs else inp
         inp = inp.to(self.device)
@@ -108,20 +109,22 @@ class BaseVisualizer(ABC):
     @abstractmethod
     def forward(self, wsi_ID):
         pass
- 
+
 class TileSeeker(BaseVisualizer): 
     """
     Decision-based extraction of predictive tiles.
     Takes as input a model of MIL (AttentionMIL), extracts the predictive tiles
     contained in the train + test set used for training the model.
     """
-    def __init__(self, model, n_best, min_prob=False, max_per_slides=None, path_emb=None):
+    def __init__(self, model, n_best, min_prob=False, max_per_slides=None, path_emb=None, att_thres='otsu', store=True):
         """__init__.
 
         :param model: str, path to a DeepMIL checkpoint.
         :param n_best: int, number of tiles to keep per class.
         :param min_prob: if True, keeps tiles MINIMIZING a given logit.
         :param max_per_slides: diversity parameter. A WSI can not participate to 
+        :param att_thres: 'str' or int: if str = 'otsu', use otsu threshold to select for tiles, 
+        else, use setted number of tile threshold (usually 300)
         the selection with more than max_per_slides tiles.
         :param path_emb: str,  
         """
@@ -133,6 +136,8 @@ class TileSeeker(BaseVisualizer):
         self.n_best = n_best
         self.min_prob = min_prob
         self.max_per_slides = max_per_slides
+        self.att_thres = att_thres
+        self.store = store
 
         ## Model parameters
         assert self.model.args.num_heads == 1, 'you can\'t extract a best tile when using the multiheaded attention'
@@ -155,13 +160,13 @@ class TileSeeker(BaseVisualizer):
         :param wsi_ID: wsi_ID as appearing in the table_data.
         """
         if type(wsi_ID) is int:
-            x = glob(os.path.join(self.path_emb_mat, '*_embedded.npy'))[wsi_ID]
+            x = glob(os.path.join(self.path_emb, 'mat_pca', '*_embedded.npy'))[wsi_ID]
             wsi_ID = os.path.basename(x).split('_embedded')[0]
             x = np.load(x)
         elif isinstance(wsi_ID, np.ndarray):
             x = wsi_ID
         else:
-            x = os.path.join(self.path_emb_mat, wsi_ID+'_embedded.npy')
+            x = os.path.join(self.path_emb, 'mat_pca', wsi_ID+'_embedded.npy')
             x = np.load(x)
 
         info = self._get_info(wsi_ID, path_emb=self.path_emb)
@@ -173,23 +178,28 @@ class TileSeeker(BaseVisualizer):
 
         self.attention(x.unsqueeze(0))
         tw = self.hooker.tiles_weights.squeeze()
-        _, ind = torch.sort(torch.Tensor(tw))
-        size_select = min(300, len(ind))#int(len(ind)/100)
-        selection = set(ind[-size_select:].cpu().numpy())
+        ## Otsu thresholding
+        if self.att_thres == 'otsu':
+            otsu = filters.threshold_otsu(tw)
+            selection = np.where(tw >= otsu)[0]
+        elif isinstance(self.att_thres, int):
+            _, ind = torch.sort(torch.Tensor(tw))
+            size_select = min(thres_otsu, len(ind))#int(len(ind)/100)
+            selection = set(ind[-size_select:].cpu().numpy())
         
         # Find attention scores to filter out of distribution tiles
-        self.store_best(x.cpu().numpy(), logits, info, selection, min_prob=self.min_prob, max_per_slides=self.max_per_slides)
+        if self.store:
+            self.store_best(x.cpu().numpy(), logits, info, selection, min_prob=self.min_prob, max_per_slides=self.max_per_slides)
         return self
 
-    def forward_all(self, only_test=True):
+    def forward_all(self):
         table = self.table
-        test = int(self.model.args.test_fold)
-        wsi_ID = table[table['test'] == test]['ID'].values if only_test else table['ID'].values
-        for o in wsi_ID:
+        wsi_ID = table['ID'].values
+        for n, o in enumerate(wsi_ID):
             try:
                 self.forward(o)
             except:
-                print(f'exception for {o}')
+                print('exception: ', o)
         return self
 
     def store_best(self, inp, out, info, selection_att, min_prob=False, max_per_slides=None):
@@ -220,7 +230,8 @@ class TileSeeker(BaseVisualizer):
             for o in range(out.shape[1]):
                 # If the score for class o at tile s is bigger than the smallest 
                 # stored value: put in storage
-                if (len(self.store_score[o]) < self.n_best) or (sgn * out[s,o] >= sgn * self.store_score[o][0]):
+                is_pos = sgn * out[s, o] > 0
+                if is_pos and ((len(self.store_score[o]) < self.n_best) or (sgn * out[s,o] >= sgn * self.store_score[o][0])):
                     tmp_infostore[o].append(info['paradict'][s])
                     tmp_tilestore[o].append(inp[s,:])
                     tmp_attentionstore[o].append(self.hooker.tiles_weights[s, :])
@@ -273,4 +284,75 @@ class TileSeeker(BaseVisualizer):
             self.store_image[i] = [self._get_image(self.path_raw, x).convert('RGB') for x in self.store_info[o]]
         return self
 
-    
+class ConsensusTileSeeker(TileSeeker):
+    def __init__(self, model, n_best, min_prob=False, max_per_slides=None, path_emb=None, att_thres='otsu'):
+        super(ConsensusTileSeeker, self).__init__(model[0], n_best, min_prob, max_per_slides, path_emb, att_thres, False)
+        self.path_raw = "/gpfsdsstore/projects/rech/gdg/uub32zv/concat/tcga_sample"
+        tile_seekers = []
+        for m in model:
+            ts = TileSeeker(m, n_best, min_prob, max_per_slides, path_emb, att_thres, False)
+            ts.path_raw = "/gpfsdsstore/projects/rech/gdg/uub32zv/concat/tcga_sample"
+            tile_seekers.append(ts)
+        self.seekers = tile_seekers
+        self.model_name = tile_seekers[0].model.args.model_name
+        self.target_name = tile_seekers[0].model.args.target_name
+
+        ## list that have to be filled with various WSI
+        self.store_info = None
+        self.store_score = None
+        self.store_tile = None
+        self.store_images = None
+        self.store_preclassif = None
+        self.store_attention = None
+        self._reset_storage()
+
+    def forward(self, wsi_ID):
+        """forward.
+        Execute a forward pass through the MLP classifier. 
+        Stores the n-best tiles for each class.
+        :param wsi_ID: wsi_ID as appearing in the table_data.
+        """
+        if type(wsi_ID) is int:
+            x = glob(os.path.join(self.path_emb,'mat_pca', '*_embedded.npy'))[wsi_ID]
+            wsi_ID = os.path.basename(x).split('_embedded')[0]
+            x = np.load(x)
+        elif isinstance(wsi_ID, np.ndarray):
+            x = wsi_ID
+        else:
+            x = os.path.join(self.path_emb,  'mat_pca', wsi_ID+'_embedded.npy')
+            x = np.load(x)
+
+        info = self._get_info(wsi_ID, path_emb=self.path_emb)
+
+        #process each images
+        x = self._preprocess(x)
+        outs = []
+        logits = []
+        attention = []
+        for s in self.seekers:
+            outs.append(s.classifier(x).detach().cpu().numpy())
+            logits.append(s.hooker.scores)
+            s.attention(x.unsqueeze(0))
+            attention.append(s.hooker.tiles_weights)
+        out = np.mean(outs, 0)
+        logits = np.mean(logits, 0)
+        tw = np.mean(attention, 0)
+        #filling the hooker with mean values
+        self.hooker.tiles_weights = tw
+        self.hooker.reprewsi = s.hooker.reprewsi
+
+        ## Otsu thresholding
+        if self.att_thres == 'otsu':
+            otsu = filters.threshold_otsu(tw)
+            selection = np.where(tw >= otsu)[0]
+        elif isinstance(self.att_thres, int):
+            _, ind = torch.sort(torch.Tensor(tw))
+            size_select = min(thres_otsu, len(ind))#int(len(ind)/100)
+            selection = set(ind[-size_select:].cpu().numpy())
+        
+        # Find attention scores to filter out of distribution tiles
+        self.store_best(x.cpu().numpy(), logits, info, selection, min_prob=self.min_prob, max_per_slides=self.max_per_slides)
+        return self
+
+
+

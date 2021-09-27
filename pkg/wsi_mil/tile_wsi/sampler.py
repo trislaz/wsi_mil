@@ -23,7 +23,7 @@ class TileSampler:
         embedded_wsi = np.load(wsi_path)
         self.total_tiles = embedded_wsi.shape[0]
         if args.sampler == 'dpp':
-            self.dpp = FiniteDPP('likelihood', **{'L_gram_factor': embedded_wsi[:,:50].T})
+            self.dpp = FiniteDPP('likelihood', **{'L_gram_factor': embedded_wsi[:,:args.nb_tiles].T})
             self.dpp.sample_exact_k_dpp(size=args.nb_tiles)
         self.name_wsi = name_wsi
         self.path_wsi = wsi_path
