@@ -43,6 +43,7 @@ class ImageTiler:
         self.device = args.device
         self.size = (args.size, args.size)
         self.path_wsi = args.path_wsi 
+        self.max_nb_tiles = args.max_nb_tiles
         self.path_outputs = os.path.join(args.path_outputs, args.tiler, f'level_{args.level}')
         self.auto_mask = args.auto_mask
         self.path_mask = args.path_mask
@@ -175,6 +176,9 @@ class ImageTiler:
 
         :param param_tiles: list: output of the patch_sampling.
         """
+        if self.max_nb_tiles is not None:
+            n = min(self.max_nb_tiles, len(param_tiles))
+            param_tiles = np.array(param_tiles)[np.random.choice(range(len(param_tiles)), n, replace=False)]
         for o, para in enumerate(param_tiles):
             patch = get_image(slide=self.path_wsi, para=para, numpy=False)
             path_tile = os.path.join(self.outpath['tiles'], f"tile_{o}.png")
