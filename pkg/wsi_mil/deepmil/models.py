@@ -327,7 +327,7 @@ class DeepMIL(Model):
         proba = self._to_pseudo_proba(self._forward_no_grad(x).cpu())
         pred = int(self._predict_function(proba).item())
         pred = self.label_encoder.inverse_transform([pred]).item()
-        return proba.numpy(), pred
+        return proba.numpy()[0], pred
 
     def evaluate(self, x, y):
         """
