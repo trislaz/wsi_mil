@@ -140,6 +140,7 @@ class DeepMIL(Model):
                             'y_true': [],
                             'preds':[], 
                             'scores': []}
+        self.scores_dpp = []
         self.mean_train_loss = 0
         self.mean_val_loss = 0
         self.model_name = args.model_name
@@ -150,7 +151,7 @@ class DeepMIL(Model):
         self.train_loader, self.val_loader = self._get_data_loaders(args, with_data)
         self.label_encoder = self.train_loader.dataset.label_encoder if label_encoder is None else label_encoder
         # when training ipca = None, when predicting, ipca is given when loading.
-        self.ipca = self.train_loader.dataset.ipca if ipca is None else ipca 
+        self.ipca =  ipca 
         self.criterion = self._get_criterion(args.criterion)
         self.bayes = False
 
@@ -290,6 +291,7 @@ class DeepMIL(Model):
         self.results_val['scores'] = []
         self.results_val['y_true'] = []
         self.results_val['proba_preds'] = []
+
         return val_metrics
 
     def _predict_function(self, scores):
@@ -327,7 +329,33 @@ class DeepMIL(Model):
         proba = self._to_pseudo_proba(self._forward_no_grad(x).cpu())
         pred = int(self._predict_function(proba).item())
         pred = self.label_encoder.inverse_transform([pred]).item()
-        return proba.numpy()[0], pred
+        return proba.numpy(), pred
+
+    def evaluate_kdpp(self, x, y, end):
+        """
+        takes x, y torch.Tensors.
+        Predicts on x, stores y and the loss, and the outputs of the network.
+        n: number of iteration of sampling (and evaluation)
+        """
+        y = y.to(self.args.device, dtype=torch.int64)
+        x = x.to(self.args.device)
+        score = self._forward_no_grad(x).to('cpu')
+        self.scores_dpp.append(score)
+        loss = self.criterion(score, y.to('cpu'))       
+        if end:
+            scores = torch.cat(self.scores_dpp).mean(0)
+            y = y.to('cpu', dtype=torch.int64)
+            pred = int(self._predict_function(self._to_pseudo_proba(scores)).item())
+            pred = self.label_encoder.inverse_transform([pred])
+            proba = self._get_pred_pseudo_proba(scores)
+            self.results_val['scores'].append(self._to_pseudo_proba(scores.numpy()))
+            self.results_val['proba_preds'] += [proba.item()]
+            self.results_val['y_true'] += list(y.cpu().numpy())
+            self.results_val['preds'] += [pred.item()]
+            self.scores_dpp = []
+        return loss.detach().cpu().item()
+
+
 
     def evaluate(self, x, y):
         """

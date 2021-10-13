@@ -7,6 +7,7 @@ from torch.nn import (Linear, Module, Sequential, LeakyReLU, Tanh, Softmax, Iden
                       Sigmoid, Conv1d, Conv2d, ReLU, Dropout, BatchNorm1d, BatchNorm2d, InstanceNorm1d, 
                       MaxPool3d, functional, LayerNorm, MultiheadAttention, LogSoftmax, ModuleList)
 from torch.nn.modules import TransformerEncoder, TransformerEncoderLayer
+import copy
 from torch.nn.parameter import Parameter
 import torch
 from torch.nn.init import (xavier_normal_, xavier_uniform_, constant_)
@@ -74,14 +75,16 @@ class MultiHeadAttention(Module):
         return x
 
 class LinearBatchNorm(Module):
-    def __init__(self, in_features, out_features, dropout, constant_size):
+    def __init__(self, in_features, out_features, dropout, constant_size, dim_batch=None):
+        if dim_batch is None:
+            dim_batch = out_features
         super(LinearBatchNorm, self).__init__()
         self.cs = constant_size
         self.block = Sequential(
             Linear(in_features, out_features),
             ReLU(),# Added 25/09
             Dropout(p=dropout),# Added 25/09
-            self.get_norm(constant_size, out_features),
+            self.get_norm(constant_size, dim_batch),
                 )
     def get_norm(self, constant_size, out_features):
         if not constant_size:
@@ -143,6 +146,107 @@ class MHMC_layers(Module):
         out = self.classifier(slide)
         out = out.view((bs, self.num_class))
         return out
+
+
+class GeneralMIL(Module):
+    """
+    General MIL algorithm with tunable pooling function.
+    Same as MultiHeadedAttentionMIL_multiclass but have a classifier with N 
+    Linear layers. 
+    N is parametrized by args by args.n_layers_classif
+    """
+    def __init__(self, args):
+        super(GeneralMIL, self).__init__()
+        ##  Set parameters
+        self.dropout = args.dropout
+        width_fe = is_in_args(args, 'width_fe', 64)
+        atn_dim = is_in_args(args, 'atn_dim', 256)
+        self.feature_depth = is_in_args(args, 'feature_depth', 512)
+        self.num_heads = is_in_args(args, 'num_heads', 1)
+        self.num_class = is_in_args(args, 'num_class', 2)
+        self.n_layers_classif = is_in_args(args, 'n_layers_classif', 1)
+        self.dim_heads = atn_dim // self.num_heads
+        assert self.dim_heads * self.num_heads == atn_dim, "atn_dim must be divisible by num_heads"
+
+        ## set networks
+        self.args = copy.deepcopy(args)
+        if self.args.instance_transf:
+            self.instance_transf = Sequential(
+                    LinearBatchNorm(int(args.feature_depth), 256, args.dropout,  args.constant_size), 
+                    LinearBatchNorm(256, 128, args.dropout, args.constant_size))
+            self.args.feature_depth = 128
+
+        self.pooling_function = PoolingFunction(self.args)
+
+        classifier = []
+        dim_classif = self._get_first_dim(self.args)
+        classifier.append(LinearBatchNorm(int(dim_classif), width_fe, self.args.dropout, self.args.constant_size))
+        for i in range(self.n_layers_classif):
+            classifier.append(LinearBatchNorm(width_fe, width_fe, self.args.dropout, self.args.constant_size))
+        classifier.append(Linear(width_fe, self.num_class))
+        classifier.append(LogSoftmax(-1))
+        self.classifier = Sequential(*classifier)
+
+    def _get_first_dim(self, args):
+        if args.pooling_fct == 'conan':
+            return 2 * args.k * args.feature_depth
+        else:
+            return args.feature_depth
+
+    def forward(self, x):
+        """
+    Input x of size BxNxF where :
+            * F is the dimension of feature space
+            * N is number of patche
+    """
+        bs, nbt, _ = x.shape
+        if self.args.instance_transf:
+            x = x.view((bs*nbt, -1))
+            x = self.instance_transf(x)
+            x = x.view((bs, nbt, -1))
+        slide = self.pooling_function(x)
+        out = self.classifier(slide)
+        out = out.view((bs, self.num_class))
+        return out
+
+class PoolingFunction(Module):
+    def __init__(self, args):
+        super(PoolingFunction, self).__init__()
+        self.pooling = args.pooling_fct
+        self.args = args
+        self.k = args.k
+        if self.pooling in ['ilse', 'conan', 'max']:
+            self.attention = Sequential(
+                MultiHeadAttention(args),
+                Softmax(dim=-2)
+            )
+
+    def forward(self, x):
+        if self.pooling == 'ilse':
+            w = self.attention(x) # (bs, nbt, nheads)
+            w = torch.transpose(w, -1, -2) # (bs, nheads, nbt)
+            slide = torch.matmul(w, x) # Slide representation, shape (bs, nheads, nfeatures)
+            slide = slide.flatten(1, -1) # (bs, nheads*nfeatures)
+        elif self.pooling == 'mean':
+            slide = torch.mean(x, -2) # BxF
+        elif self.pooling == 'instance_max':
+            slide, _ = torch.max(x, dim=-2) # BxF
+        elif self.pooling == 'max':
+            w = self.attention(x)
+            _, inds = torch.max(w, dim=-2)
+            slide = torch.gather(x, 1, torch.cat([inds.unsqueeze(-1)] * self.args.feature_depth, axis=-1))
+            slide = slide.squeeze(-2)
+        elif self.pooling == 'conan':
+            w = self.attention(x).squeeze(-1) # BxN
+            _, topk = torch.topk(w, self.k, -1)
+            _, lowk = torch.topk(-w, self.k, -1)
+            topk = torch.gather(x, 1, torch.cat([topk.unsqueeze(-1)] * self.args.feature_depth, axis=-1))
+            lowk = torch.gather(x, 1, torch.cat([lowk.unsqueeze(-1)] * self.args.feature_depth, axis=-1))
+            slide = torch.cat([topk, lowk], axis=1) # Bx2kxF
+            slide = slide.flatten(-2,-1)
+        else:
+            print(f'{self.pooling} pooling function not yet implemented``')
+        return slide
 
 class MultiHeadedAttentionMIL(Module):
     """
@@ -313,10 +417,10 @@ class Conan(Module):
 
     """
     def __init__(self, args):
-        self.k = 10
-        self.hidden1 = is_in_args(args, 'hidden1', 32)
+        self.k = 5
+        self.hidden1 = is_in_args(args, 'hidden1', 256)
         self.hidden2 = self.hidden1//4 
-        self.hidden_fcn = is_in_args(args, 'hidden_fcn', 32)
+        self.hidden_fcn = is_in_args(args, 'hidden_fcn', 128)
         use_bn = args.constant_size & (args.batch_size > 8)
         super(Conan, self).__init__()
         self.continuous_clusters = Sequential(
@@ -349,8 +453,8 @@ class Conan(Module):
                      dropout=args.dropout,
                      use_bn=use_bn),
             Linear(in_features=self.hidden_fcn,
-                   out_features=1),
-            Sigmoid()
+                   out_features=args.num_class),
+            LogSoftmax(-1)
         )
 
     def forward(self, x):
@@ -367,7 +471,6 @@ class Conan(Module):
         avg = torch.mean(out, dim=-1)
         out = torch.cat((scores.flatten(1, -1), avg.flatten(1, -1), out.flatten(1, -1)), axis=-1)
         out = self.classifier(out)
-        out = out.squeeze(-1)
         return out
     
 class SelfAttentionMIL(Module):
@@ -447,7 +550,7 @@ class MILGene(Module):
     MIL framework on a learnable feature extractor (taking images as input).
     Not implemented here so.
     """
-    models = { 
+    models = { 'generalmil': GeneralMIL, 
                 'multiheadmil': MultiHeadedAttentionMIL,
                 'mhmc_layers': MHMC_layers,
                 'conan': Conan, 
