@@ -150,7 +150,7 @@ class DeepMIL(Model):
         self.train_loader, self.val_loader = self._get_data_loaders(args, with_data)
         self.label_encoder = self.train_loader.dataset.label_encoder if label_encoder is None else label_encoder
         # when training ipca = None, when predicting, ipca is given when loading.
-        self.ipca = self.train_loader.dataset.ipca if ipca is None else ipca 
+#        self.ipca = self.train_loader.dataset.ipca if ipca is None else ipca 
         self.criterion = self._get_criterion(args.criterion)
         self.bayes = False
 
@@ -393,8 +393,8 @@ class DeepMIL(Model):
                 'args': self.args,
                 'table_data': self.train_loader.dataset.table_data,
                 'best_metrics': self.best_metrics, 
-                'label_encoder': self.train_loader.dataset.label_encoder,
-                'ipca': self.ipca
+                'label_encoder': self.train_loader.dataset.label_encoder
+                #'ipca': self.ipca
                 }
         return dictio
 

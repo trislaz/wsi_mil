@@ -51,7 +51,7 @@ class EmbeddedWSI(Dataset):
         self.label_encoder = None
         self.args = args
         self.embeddings = os.path.join(args.wsi, 'mat_pca')
-        self.ipca = load(os.path.join(args.wsi, 'pca', 'pca_tiles.joblib'))
+#        self.ipca = load(os.path.join(args.wsi, 'pca', 'pca_tiles.joblib'))
         self.info = os.path.join(args.wsi, 'info')
         self.use_train = use_train
         self.predict = predict
@@ -252,7 +252,6 @@ class Dataset_handler:
                     counts += cc[v_op]
                 weights.append(counts/cc[l])
         return weights
-
 
 class WeightedRandomSamplerFromList(torch.utils.data.Sampler):
     """WeightedRandomSamplerFromList.

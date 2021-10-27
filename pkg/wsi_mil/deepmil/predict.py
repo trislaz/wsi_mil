@@ -23,7 +23,7 @@ def load_model(model_path, device):
     checkpoint = torch.load(model_path, map_location='cpu')
     args = checkpoint['args']
     args.device = device
-    model = DeepMIL(args, label_encoder=checkpoint['label_encoder'], ipca=checkpoint['ipca'])
+    model = DeepMIL(args, label_encoder=checkpoint['label_encoder'], ipca=None)##checkpoint['ipca'])
     model.network.load_state_dict(checkpoint['state_dict'])
     model.network.eval()
     model.table_data = checkpoint['table_data'] if 'table_data' in checkpoint else model.args.table_data
