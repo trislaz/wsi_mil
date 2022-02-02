@@ -70,7 +70,7 @@ def predict(model_path, data_path):
         name = os.path.basename(wsi).replace('.npy', '.tif')
         wsi = preprocessing(wsi, device, model.ipca)
         proba, y_hat = model.predict(wsi)
-        results.append({'filename': name, 'pred': y_hat, 'proba':proba[0]})
+        results.append({'filename': name, 'pred': y_hat, 'proba':proba[0][0]})
     results_df = pd.DataFrame(results)
     return results_df
 

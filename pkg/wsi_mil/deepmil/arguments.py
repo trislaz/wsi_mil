@@ -11,10 +11,10 @@ def get_arguments(raw_args=None, train=True, config=None):
     parser.add_argument('--config', type=str, help='Path to the config file. If None, use the command line parser', default=config)
     parser.add_argument("--wsi", type=str,help="Path to the tiled WSI global folder (containing several resolutions)")
     parser.add_argument("--target_name", type=str,help='Name of the target variable as referenced in the table_data.')
+    parser.add_argument("--table_data", type=str)
     parser.add_argument("--test_fold",type=int, help="Number of the fold used as a test")
     parser.add_argument('--sampler', type=str, help='Type of tile sampler. dispo : random | biopsie', default='random')
     parser.add_argument("--feature_depth", type=int, default=512, help="Number of features to keep")
-    parser.add_argument('--table_data', type=str, help='path to the csv containing the data info.')
     parser.add_argument('--model_name', type=str, default='mhmc_layers', help='name of the model used. Avail : mhmc_layers | 1s | transformermil | sa | conan ')
     parser.add_argument("--patience", type=int, default=None, help="Patience parameter for early stopping. By default, patience is set to epochs.")
     parser.add_argument('--epochs', type=int, default=100, help="number of epochs for training")
@@ -36,6 +36,11 @@ def get_arguments(raw_args=None, train=True, config=None):
     parser.add_argument('--n_layers_classif', type=int, help='number of the internal layers of the classifier - works with model_name = mhmc_layers', default=3)
     parser.add_argument('--use_val', default=1, help="Use a validation set when training")
     parser.add_argument('--val_sampler', default='all', help='tile sampler to use for validation')
+    parser.add_argument('-k', type=int, default=5, help='k parameter to select topk and lowk tiles')
+    parser.add_argument('--pooling_fct', type=str, default='ilse', help='pooling function used. max, mean, ilse, conan possible')
+    parser.add_argument('--instance_transf', default=0, type=int, help='either 1 or 0, wether to transform the tiles before classification and attention')
+
+    parser.add_argument('--no_strat_sampling', default=0, type=int, help='if =1, do not use strategic sampling - even to balance the dataset -')
 
     if not train: # If test, nb_tiles = 0 (all tiles considered) and batch_size=1
         parser.add_argument("--model_path", type=str, help="Path to the model to load")
@@ -47,6 +52,8 @@ def get_arguments(raw_args=None, train=True, config=None):
             dic = yaml.safe_load(f)
         args.__dict__.update(dic)
 
+    #table = pd.read_csv(os.path.join(args.wsi, 'table_data.csv'))
+    #args.table_data = table
     table = pd.read_csv(args.table_data)
     args.num_class = len(set(table[args.target_name]))
     args.train = train

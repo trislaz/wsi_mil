@@ -235,6 +235,42 @@ class ImageTiler:
                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
         return trans
 
+    def ciga_tiler(self, param_tiles):
+        def load_model_weights(model, weights):
+            model_dict = model.state_dict()
+            weights = {k: v for k, v in weights.items() if k in model_dict}
+            if weights == {}:
+                print('No weight could be loaded..')
+            model_dict.update(weights)
+            model.load_state_dict(model_dict)
+            return model
+        model = resnet18()
+        state = torch.load(self.model_path, map_location='cpu')
+        state_dict = state['state_dict']
+        for key in list(state_dict.keys()):
+            state_dict[key.replace('model.', '').replace('resnet.', '')] = state_dict.pop(key)
+        model = load_model_weights(model, state_dict)
+        model.fc = Identity()
+        model = model.to(self.device)
+        model.eval()
+        preprocess = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])])
+        tiles = []
+        #param_tiles = np.array(param_tiles)[np.random.choice(range(len(param_tiles)), min(4000,len(param_tiles)), replace=False)]
+        for o, para in enumerate(param_tiles):
+            image = usi.get_image(slide=self.slide, para=para, numpy=False)
+            image = image.convert("RGB")
+            if self.from_0:
+                image = image.resize(self.size)
+            image = preprocess(image).unsqueeze(0)
+            image = image.to(self.device)
+            with torch.no_grad():
+                t = model(image).squeeze()
+            tiles.append(t.cpu().numpy())
+        mat = np.vstack(tiles)
+        np.save(os.path.join(self.path_outputs, '{}_embedded.npy'.format(self.name_wsi)), mat)
+
+
+
     def moco_tiler(self, param_tiles):
         """moco_tiler.
         Encodes each tiles thanks to a resnet18 pretrained with MoCo.

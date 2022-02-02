@@ -34,7 +34,7 @@ class BaseVisualizer(ABC):
         self.table = self._load_table(self.model.table_data)
         self.path_emb = self.model.args.wsi if path_emb is None else path_emb
         self.path_emb_mat = os.path.join(self.path_emb)
-        self.path_raw = self.model.args.raw_path
+        self.path_raw = '/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag'#self.model.args.raw_path
         self.num_class = self.model.args.num_class
         self.num_heads = self.model.args.num_heads
         self.target_name = self.model.args.target_name
@@ -84,7 +84,7 @@ class BaseVisualizer(ABC):
         slide = open_slide(path_wsi[0])
         image = slide.read_region(location=(param['x'], param['y']),
                                 level=param['level'], 
-                                size=(param['xsize'], param['ysize']))
+                                size=(448, 448))#(param['xsize'], param['ysize']))
         return image
 
     def _preprocess(self, input_array, expand_bs=False):
@@ -138,6 +138,7 @@ class TileSeeker(BaseVisualizer):
         self.max_per_slides = max_per_slides
         self.att_thres = att_thres
         self.store = store
+        self.path_raw = "/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag/"
 
         ## Model parameters
         assert self.model.args.num_heads == 1, 'you can\'t extract a best tile when using the multiheaded attention'
@@ -287,11 +288,11 @@ class TileSeeker(BaseVisualizer):
 class ConsensusTileSeeker(TileSeeker):
     def __init__(self, model, n_best, min_prob=False, max_per_slides=None, path_emb=None, att_thres='otsu'):
         super(ConsensusTileSeeker, self).__init__(model[0], n_best, min_prob, max_per_slides, path_emb, att_thres, False)
-        self.path_raw = "/gpfsdsstore/projects/rech/gdg/uub32zv/concat/tcga_sample"
+        self.path_raw = "/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag/"
         tile_seekers = []
         for m in model:
             ts = TileSeeker(m, n_best, min_prob, max_per_slides, path_emb, att_thres, False)
-            ts.path_raw = "/gpfsdsstore/projects/rech/gdg/uub32zv/concat/tcga_sample"
+            ts.path_raw = "/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag/"
             tile_seekers.append(ts)
         self.seekers = tile_seekers
         self.model_name = tile_seekers[0].model.args.model_name
