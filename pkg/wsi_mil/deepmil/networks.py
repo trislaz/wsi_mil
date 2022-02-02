@@ -147,7 +147,6 @@ class MHMC_layers(Module):
         out = out.view((bs, self.num_class))
         return out
 
-
 class GeneralMIL(Module):
     """
     General MIL algorithm with tunable pooling function.
@@ -164,7 +163,7 @@ class GeneralMIL(Module):
         self.feature_depth = is_in_args(args, 'feature_depth', 512)
         self.num_heads = is_in_args(args, 'num_heads', 1)
         self.num_class = is_in_args(args, 'num_class', 2)
-        self.n_layers_classif = is_in_args(args, 'n_layers_classif', 1)
+        self.n_layers_classif = is_in_args(args, 'n_layers_classif', 2)
         self.dim_heads = atn_dim // self.num_heads
         assert self.dim_heads * self.num_heads == atn_dim, "atn_dim must be divisible by num_heads"
 
@@ -215,11 +214,16 @@ class PoolingFunction(Module):
         self.pooling = args.pooling_fct
         self.args = args
         self.k = args.k
-        if self.pooling in ['ilse', 'conan', 'max']:
+        if self.pooling in ['ilse','max']:
             self.attention = Sequential(
                 MultiHeadAttention(args),
                 Softmax(dim=-2)
             )
+        elif self.pooling in ['conan']:
+             self.attention = Sequential(
+                MultiHeadAttention(args)
+            )
+            
 
     def forward(self, x):
         if self.pooling == 'ilse':
@@ -227,15 +231,19 @@ class PoolingFunction(Module):
             w = torch.transpose(w, -1, -2) # (bs, nheads, nbt)
             slide = torch.matmul(w, x) # Slide representation, shape (bs, nheads, nfeatures)
             slide = slide.flatten(1, -1) # (bs, nheads*nfeatures)
+
         elif self.pooling == 'mean':
             slide = torch.mean(x, -2) # BxF
-        elif self.pooling == 'instance_max':
+
+        elif self.pooling == 'max_features':
             slide, _ = torch.max(x, dim=-2) # BxF
+
         elif self.pooling == 'max':
             w = self.attention(x)
             _, inds = torch.max(w, dim=-2)
             slide = torch.gather(x, 1, torch.cat([inds.unsqueeze(-1)] * self.args.feature_depth, axis=-1))
             slide = slide.squeeze(-2)
+
         elif self.pooling == 'conan':
             w = self.attention(x).squeeze(-1) # BxN
             _, topk = torch.topk(w, self.k, -1)
@@ -244,6 +252,7 @@ class PoolingFunction(Module):
             lowk = torch.gather(x, 1, torch.cat([lowk.unsqueeze(-1)] * self.args.feature_depth, axis=-1))
             slide = torch.cat([topk, lowk], axis=1) # Bx2kxF
             slide = slide.flatten(-2,-1)
+
         else:
             print(f'{self.pooling} pooling function not yet implemented``')
         return slide
@@ -571,6 +580,7 @@ class MILGene(Module):
         else:
             batch_size, nb_tiles = 1, x.shape[-2]
         x = self.features_tiles(x)
+        print(x.shape)
         x = x.view(batch_size, nb_tiles, self.args.feature_depth)
         x = self.mil(x)
         return x

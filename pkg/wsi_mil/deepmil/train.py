@@ -2,6 +2,7 @@ from .arguments import get_arguments
 from .dataloader import Dataset_handler
 from .models import DeepMIL
 import numpy as np
+import torch
 # For the sklearn warnings
 import warnings
 warnings.filterwarnings('always')

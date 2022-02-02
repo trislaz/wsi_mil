@@ -40,6 +40,8 @@ def get_arguments(raw_args=None, train=True, config=None):
     parser.add_argument('--pooling_fct', type=str, default='ilse', help='pooling function used. max, mean, ilse, conan possible')
     parser.add_argument('--instance_transf', default=0, type=int, help='either 1 or 0, wether to transform the tiles before classification and attention')
 
+    parser.add_argument('--no_strat_sampling', default=0, type=int, help='if =1, do not use strategic sampling - even to balance the dataset -')
+
     if not train: # If test, nb_tiles = 0 (all tiles considered) and batch_size=1
         parser.add_argument("--model_path", type=str, help="Path to the model to load")
     args, _ = parser.parse_known_args(raw_args)

@@ -11,7 +11,8 @@ parser.add_argument('--n_best', type=int, default=20)
 parser.add_argument('--min_prob', action='store_true')
 parser.add_argument('--max_per_slides', type=int, default=None)
 parser.add_argument('--only_test', action='store_true')
-parser.add_argument('--consensus', action='store_true')
+parser.add_argument('--consensus', action='store_true') 
+
 args = parser.parse_args()
 
 if args.consensus:

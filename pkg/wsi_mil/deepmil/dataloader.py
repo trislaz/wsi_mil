@@ -43,7 +43,7 @@ class EmbeddedWSI(Dataset):
                 * test_fold, int, number of the fold used as test.
                 * feature_depth, int, number of dimension of the embedded space to keep. (0<x<2048)
                 * nb_tiles, int, if 0 : take all the tiles, will need custom collate_fn, else randomly picks $nb_tiles in each WSI.
-                * train, bool, if True : extract the data s.t fold != test_fold, if False s.t. fold == test_fold
+                * train, bool, if True : extract the data s.t fold != test_fold, if False s.t. fold == testse_fold
                 * sampler, str: tile sampler. dispo : random_sampler | random_biopsie
 
         """
@@ -210,13 +210,13 @@ class Dataset_handler:
             labels_train = np.array(labels)[np.array(train_indices)]
             labels_train_strat = np.array(labels_strat)[np.array(train_indices)]
             val_sampler = SubsetRandomSampler(val_indices)
-            train_sampler = WeightedRandomSamplerFromList(self._get_weights_sampling(labels_train_strat, wr_whole_label=self.args.sample_wr_whole_label), train_indices, len(train_indices))
+            train_sampler = WeightedRandomSamplerFromList(self._get_weights_sampling(labels_train_strat, wr_whole_label=self.args.sample_wr_whole_label, no_strat_sampling=self.args.no_strat_sampling), train_indices, len(train_indices))
         else:
             train_sampler = SubsetRandomSampler(list(range(len(dataset))))
             val_sampler = SubsetRandomSampler(list(range(len(dataset))))
         return train_sampler, val_sampler
 
-    def _get_weights_sampling(self, labels, wr_whole_label=False):
+    def _get_weights_sampling(self, labels, wr_whole_label=False, no_strat_sampling=False):
         """_get_weights_sampling.
         Computes the weights for sampling the batches. 
 
@@ -231,10 +231,15 @@ class Dataset_handler:
         else: we sample s.t P({B=bi} | {T=t1}) = P({B=bi} | {T=t2}).
 
         """
-        if wr_whole_label:
+        if no_strat_sampling:
+            weights = [1 for x in labels]
+            print('ooook')
+        elif wr_whole_label:
             cc = Counter(labels)
             weights = [1/cc[x] for x in labels]
+            print('not_ok')
         else:
+            print('not_ok')
             table = self.dataset_train.table_data
             target = self.args.target_name
             target_set = list(set(table[target].values))
@@ -252,7 +257,6 @@ class Dataset_handler:
                     counts += cc[v_op]
                 weights.append(counts/cc[l])
         return weights
-
 
 class WeightedRandomSamplerFromList(torch.utils.data.Sampler):
     """WeightedRandomSamplerFromList.
