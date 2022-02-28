@@ -1,4 +1,5 @@
 from torch.utils.data import (Dataset, DataLoader, SubsetRandomSampler)
+import pickle
 from sklearn.preprocessing import LabelEncoder
 from joblib import load
 import pandas as pd
@@ -139,6 +140,75 @@ class EmbeddedWSI(Dataset):
             mat = mat[indices,:]
         return mat
 
+class EmbeddedWSI_xy(EmbeddedWSI):
+    """
+    +++++
+    This implem outputs the infodict of each tiles for a given WSI.
+    +++++
+
+
+    """
+    def _make_db(self):
+        """_make_db.
+        Creates the dataset. Namely, populates the files list
+        with the selected WSI.
+        Populates also 3 dictionnary, with keys the elements of the files list
+        and values : 
+            * target_dict : their target values
+            * stratif_dict : their stratif values (present in the table_data).
+            * sampler_dict : their associated TileSampler object.
+
+        :return [files, target_dict, sampler_dict, stratif_dict, label_encoder] 
+        """
+        table, label_encoder = self.transform_target()
+        target_dict = dict() #Key = path to the file, value=target
+        sampler_dict = dict()
+        stratif_dict = dict()
+        info_dict = dict()
+        names = table['ID'].values
+        files_filtered =[]
+        for name in names:
+            filepath = os.path.join(self.embeddings, name+'_embedded.npy')
+            if os.path.exists(filepath):
+                if self._is_in_db(name):
+                    files_filtered.append(filepath)
+                    target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
+                    sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                    stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
+                    with open(os.path.join(self.info, name+'_infodict.pickle'), 'rb') as dico:
+                        info_dict[filepath] = pickle.load(dico)
+        self.info_dict = info_dict
+        return files_filtered, target_dict, sampler_dict, stratif_dict, label_encoder
+
+    def __getitem__(self, idx):
+        path = self.files[idx]
+        mat = np.load(path)[:,:self.args.feature_depth]
+        indices = self._select_tiles(path, mat)
+        mat = mat[indices, :]
+        xy = np.vstack([np.array((round(self.info_dict[path][x.item()]['x']/4), round(self.info_dict[path][x.item()]['y']/4)))  for x in indices])
+        mat = torch.from_numpy(mat).float() 
+        target = self.target_dict[path]
+        return mat, target, xy
+
+    def _select_tiles(self, path, mat):
+        """_select_tiles.
+        Samples the tiles in the WSI.
+
+        :param path: str: path of the current WSI.
+        :param mat: ndarray: matrix of the embedded wsi.
+        return ndarray: matrix of the subsampled WSI.
+        """
+        if self.use_train & self.constant_size:
+            sampler = self.sampler_dict[path]
+            indices = getattr(sampler, self.args.sampler+'_sampler')(nb_tiles=self.args.nb_tiles)
+        else:
+            sampler = self.sampler_dict[path]
+            indices = getattr(sampler, self.args.val_sampler + '_sampler')(nb_tiles=self.args.nb_tiles)
+        return indices
+
+
+
+
 def collate_variable_size(batch):
     data = [item[0].unsqueeze(0) for item in batch]
     target = [torch.FloatTensor([item[1]]) for item in batch]
@@ -187,7 +257,10 @@ class Dataset_handler:
         testing fold, else of the training folds.
         :return EmbeddedWSI
         """
-        dataset = EmbeddedWSI(self.args, use_train=use_train, predict=self.predict)
+        if self.args.model_name != 'sparseconvmil':
+            dataset = EmbeddedWSI(self.args, use_train=use_train, predict=self.predict)
+        else:
+            dataset = EmbeddedWSI_xy(self.args, use_train=use_train, predict=self.predict)
         return dataset
     
     def _get_sampler(self, dataset, use_val=True):
@@ -205,9 +278,10 @@ class Dataset_handler:
         if use_val:
             labels_strat = [dataset.stratif_dict[x] for x in dataset.files]
             labels = labels_strat
-            splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=np.random.randint(100))
+            splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=np.random.randint(100))
             train_indices, val_indices = [x for x in splitter.split(X=labels_strat, y=labels_strat)][0]
             labels_train = np.array(labels)[np.array(train_indices)]
+            print(len(labels_train))
             labels_train_strat = np.array(labels_strat)[np.array(train_indices)]
             val_sampler = SubsetRandomSampler(val_indices)
             train_sampler = WeightedRandomSamplerFromList(self._get_weights_sampling(labels_train_strat, wr_whole_label=self.args.sample_wr_whole_label, no_strat_sampling=self.args.no_strat_sampling), train_indices, len(train_indices))

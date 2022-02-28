@@ -20,7 +20,7 @@ def is_in_args(args, name, default):
     """Checks if the parammeter is specified in the args Namespace
     If not, attributes him the default value
     """
-    if name in args:
+    if name in args.__dict__:
         para = getattr(args, name)
     else:
         para = default
@@ -127,7 +127,6 @@ class MHMC_layers(Module):
         for i in range(self.n_layers_classif):
             classifier.append(LinearBatchNorm(width_fe, width_fe, args.dropout, args.constant_size))
         classifier.append(Linear(width_fe, self.num_class))
-        classifier.append(LogSoftmax(-1))
         self.classifier = Sequential(*classifier)
 
     def forward(self, x):
@@ -183,7 +182,6 @@ class GeneralMIL(Module):
         for i in range(self.n_layers_classif):
             classifier.append(LinearBatchNorm(width_fe, width_fe, self.args.dropout, self.args.constant_size))
         classifier.append(Linear(width_fe, self.num_class))
-        classifier.append(LogSoftmax(-1))
         self.classifier = Sequential(*classifier)
 
     def _get_first_dim(self, args):
@@ -580,7 +578,6 @@ class MILGene(Module):
         else:
             batch_size, nb_tiles = 1, x.shape[-2]
         x = self.features_tiles(x)
-        print(x.shape)
         x = x.view(batch_size, nb_tiles, self.args.feature_depth)
         x = self.mil(x)
         return x

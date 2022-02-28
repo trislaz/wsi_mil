@@ -42,8 +42,7 @@ def get_arguments(raw_args=None, train=True, config=None):
 
     parser.add_argument('--no_strat_sampling', default=0, type=int, help='if =1, do not use strategic sampling - even to balance the dataset -')
 
-    if not train: # If test, nb_tiles = 0 (all tiles considered) and batch_size=1
-        parser.add_argument("--model_path", type=str, help="Path to the model to load")
+    parser.add_argument("--model_path", type=str, help="Path to the model to load", default=None)
     args, _ = parser.parse_known_args(raw_args)
 
     # If there is a config file, we populate args with it (still keeping the default arguments)
@@ -51,6 +50,11 @@ def get_arguments(raw_args=None, train=True, config=None):
         with open(args.config, 'r') as f:
             dic = yaml.safe_load(f)
         args.__dict__.update(dic)
+
+    if args.model_path is not None and args.model_name != 'sparseconvmil':
+        ckpt = torch.load(args.model_path, map_location='cpu')
+        args_mod = ckpt['args_mil']
+        args.__dict__.update(args_mod.__dict__)
 
     #table = pd.read_csv(os.path.join(args.wsi, 'table_data.csv'))
     #args.table_data = table
@@ -80,6 +84,5 @@ def get_arguments(raw_args=None, train=True, config=None):
     config_str = yaml.dump(dictio)
     with open('./config.yaml', 'w') as config_file:
         config_file.write(config_str)
-
     return args
 
