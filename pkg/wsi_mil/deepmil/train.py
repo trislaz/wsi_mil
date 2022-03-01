@@ -59,7 +59,7 @@ def val(model, dataloader):
     #writes_metrics(model.writer, to_write, model.counter['epoch']) 
     state = model.make_state()
     print('mean val loss {}'.format(np.mean(mean_loss)))
-    model.update_learning_rate(model.mean_val_loss)
+    #/model.update_learning_rate(model.mean_val_loss)
     model.early_stopping(model.args.sgn_metric * to_write[model.args.ref_metric], state)
 
 def val_xy(model, dataloader):
@@ -74,7 +74,7 @@ def val_xy(model, dataloader):
     #writes_metrics(model.writer, to_write, model.counter['epoch']) 
     state = model.make_state()
     print('mean val loss {}'.format(np.mean(mean_loss)))
-    model.update_learning_rate(model.mean_val_loss)
+    #model.update_learning_rate(model.mean_val_loss)
     model.early_stopping(model.args.sgn_metric * to_write[model.args.ref_metric], state)
 
 def main(raw_args=None):

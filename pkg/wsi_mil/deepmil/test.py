@@ -44,6 +44,25 @@ def test(model, dataloader, table):
                     'label_encoder': model.label_encoder}
     return outputs_dict
 
+def test_xy(model, dataloader, table):
+    """
+    test one model
+    """
+    model.network.eval()
+    gt = []
+    for input_batch, target_batch, xy in dataloader:
+        gt.append(np.array(target_batch))
+        _ = model.evaluate(input_batch, target_batch, xy)
+    gt = np.vstack(gt)
+    scores = model.results_val['scores']
+    ids = [os.path.splitext(os.path.basename(x))[0].split('_embedded')[0] for x in dataloader.dataset.files]
+    outputs_dict = {'gt': gt,
+                    'scores': scores,
+                    'ids': ids,
+                    'label_encoder': model.label_encoder}
+    return outputs_dict
+
+
 def fill_table(table, proba_preds, preds, ids):
     """
     returns the "data_table" with the additional columsn scores and preds.
@@ -69,6 +88,10 @@ def fill_table(table, proba_preds, preds, ids):
 def main(model_path=None,  w=False, rm_duplicates=True):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = load_model(model_path, device)
+    if model.args.model_name == 'sparseconvmil':
+        test_fct = test_xy
+    else:
+        test_fct = test
     args = model.args
     table = pd.read_csv(args.table_data)
     if rm_duplicates: # Allows the use of upsampling.
@@ -80,6 +103,6 @@ def main(model_path=None,  w=False, rm_duplicates=True):
     df = dataloader.dataset.table_data
     results = []
     args.test_fold = args.test_fold
-    results = test(model, dataloader, table)
+    results = test_fct(model, dataloader, table)
     return results
 

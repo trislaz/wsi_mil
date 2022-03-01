@@ -174,11 +174,13 @@ class DeepMIL(Model):
                 n_classes = self.args.num_class
                 linear_classifier = torch.nn.Linear(512, n_classes, False)
                 freeze_pooling_model = self.args.freeze_pooling
+                pretrain = self.args.ssl_pretraining
                 whole_model = models_marvin.LinearWithMIL(pooling_model, linear_classifier, freeze_pooling_model)
-                state_dict = torch.load(self.args.model_path, map_location='cpu')
-                state_dict = OrderedDict({k.replace('backbone', 'mil_model'): v for k, v in state_dict.items()
+                if pretrain:
+                    state_dict = torch.load(self.args.model_path, map_location='cpu')['state_dict']
+                    state_dict = OrderedDict({k.replace('backbone', 'mil_model'): v for k, v in state_dict.items()
                                           if not k.startswith('projector') and not k.startswith('predictor')})
-                whole_model.load_state_dict(state_dict, strict=False) 
+                    whole_model.load_state_dict(state_dict, strict=False) 
                 net = whole_model
             else:
                 ckpt = torch.load(self.args.model_path, map_location='cpu')
