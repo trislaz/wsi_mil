@@ -58,7 +58,7 @@ class TileSampler:
         return mask
 
     def random_sampler(self, nb_tiles):
-        indices = torch.randint(0, self.total_tiles, (nb_tiles, ))
+        indices = np.array(torch.randint(0, self.total_tiles, (nb_tiles, )))
         return indices
 
     def dpp_sampler(self, nb_tiles):

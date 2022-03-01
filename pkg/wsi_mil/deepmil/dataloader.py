@@ -185,7 +185,8 @@ class EmbeddedWSI_xy(EmbeddedWSI):
         mat = np.load(path)[:,:self.args.feature_depth]
         indices = self._select_tiles(path, mat)
         mat = mat[indices, :]
-        xy = np.vstack([np.array((round(self.info_dict[path][x.item()]['x']/4), round(self.info_dict[path][x.item()]['y']/4)))  for x in indices])
+        print(indices)
+        xy = np.vstack([np.array((round(self.info_dict[path][x]['x']/4), round(self.info_dict[path][x]['y']/4)))  for x in indices])
         mat = torch.from_numpy(mat).float() 
         target = self.target_dict[path]
         return mat, target, xy
