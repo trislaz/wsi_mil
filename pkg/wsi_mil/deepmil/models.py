@@ -2,6 +2,7 @@
 implementing models. DeepMIL implements a models that classify a whole slide image
 """
 
+
 from torch.nn import BCELoss, NLLLoss, MSELoss, LogSoftmax
 from torch.optim import Adam
 import torch
@@ -166,7 +167,6 @@ class DeepMIL(Model):
         if self.args.model_path is not None:
             if self.args.model_name == 'sparseconvmil':
                 from collections import OrderedDict
-                import torch
                 import wsi_mil.deepmil.models_marvin as models_marvin
                 resnet_model, _ = models_marvin.get_resnet_model('resnet18', 'imagenet')
                 _, sparse_subresnet = models_marvin.cut_resnet_dense_sparse(resnet_model, 4)
@@ -177,7 +177,7 @@ class DeepMIL(Model):
                 pretrain = self.args.ssl_pretraining
                 whole_model = models_marvin.LinearWithMIL(pooling_model, linear_classifier, freeze_pooling_model)
                 if pretrain:
-                    state_dict = torch.load(self.args.model_path, map_location='cpu')['state_dict']
+                    state_dict = torch.load(self.args.model_path, map_location='cpu')
                     state_dict = OrderedDict({k.replace('backbone', 'mil_model'): v for k, v in state_dict.items()
                                           if not k.startswith('projector') and not k.startswith('predictor')})
                     whole_model.load_state_dict(state_dict, strict=False) 
@@ -276,7 +276,7 @@ class DeepMIL(Model):
         :param out: torch.tensor or ndarray, output of the MIL network
         :return type(out), pseudo proba.
         """
-        if self.model_name in ['multiheadmulticlass', 'mhmc_conan', 'mhmc_layers']:
+        if self.model_name in ['multiheadmulticlass', 'mhmc_conan', 'mhmc_layers', 'generalmil', 'sparseconvmil']:
             return np.exp(out)
         else:
             return out
@@ -393,8 +393,6 @@ class DeepMIL(Model):
             self.scores_dpp = []
         return loss.detach().cpu().item()
 
-
-
     def evaluate(self, x, y, xy=None):
         """
         takes x, y torch.Tensors.
@@ -468,4 +466,3 @@ class DeepMIL(Model):
                 #'ipca': self.ipca
                 }
         return dictio
-

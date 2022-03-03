@@ -155,6 +155,8 @@ class SparseConvMIL(nn.Module):
         return wsi_embedding
 
 
+    """AverageMIL."""
+
 class AttentionMIL(nn.Module):
     def __init__(self, n_input_channels, attention_inner_neurons, gated_mechanism=False):
         super().__init__()

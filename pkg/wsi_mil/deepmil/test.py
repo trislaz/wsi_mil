@@ -62,7 +62,6 @@ def test_xy(model, dataloader, table):
                     'label_encoder': model.label_encoder}
     return outputs_dict
 
-
 def fill_table(table, proba_preds, preds, ids):
     """
     returns the "data_table" with the additional columsn scores and preds.

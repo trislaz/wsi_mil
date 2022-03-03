@@ -43,6 +43,7 @@ def get_arguments(raw_args=None, train=True, config=None):
     parser.add_argument('--no_strat_sampling', default=0, type=int, help='if =1, do not use strategic sampling - even to balance the dataset -')
 
     parser.add_argument("--model_path", type=str, help="Path to the model to load", default=None)
+    parser.add_argument("--inverse_test_train", action='store_true', help='inverse test/train subset -> experiments with few training data.')
     args, _ = parser.parse_known_args(raw_args)
 
     # If there is a config file, we populate args with it (still keeping the default arguments)

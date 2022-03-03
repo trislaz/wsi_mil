@@ -67,6 +67,8 @@ def val_xy(model, dataloader):
     mean_loss = []
     for input_batch, target_batch, xy in dataloader:
         target_batch = target_batch.to(model.device)
+        ## Using the k-dpp evaluation = making several prediction for each 
+        ## sample test, to sample the most tiles possible
         loss = model.evaluate(input_batch, target_batch, xy)
         mean_loss.append(loss)
     model.mean_val_loss = np.mean(mean_loss)

@@ -108,6 +108,9 @@ class EmbeddedWSI(Dataset):
         if 'test' in table.columns and (not self.predict):
             is_in_train = (table[table['ID'] == name]['test'] != self.args.test_fold).values[0] # "keep if i'm not test"
             is_in_test = (table[table['ID'] == name]['test'] == self.args.test_fold).values[0] 
+            if self.args.inverse_test_train:
+                is_in_train = ~is_in_train
+                is_in_test = ~is_in_test
             is_in_db = is_in_train if self.use_train else is_in_test
         return is_in_db
 
@@ -185,7 +188,6 @@ class EmbeddedWSI_xy(EmbeddedWSI):
         mat = np.load(path)[:,:self.args.feature_depth]
         indices = self._select_tiles(path, mat)
         mat = mat[indices, :]
-        print(indices)
         xy = np.vstack([np.array((round(self.info_dict[path][x]['x']/4), round(self.info_dict[path][x]['y']/4)))  for x in indices])
         mat = torch.from_numpy(mat).float() 
         target = self.target_dict[path]
@@ -204,11 +206,8 @@ class EmbeddedWSI_xy(EmbeddedWSI):
             indices = getattr(sampler, self.args.sampler+'_sampler')(nb_tiles=self.args.nb_tiles)
         else:
             sampler = self.sampler_dict[path]
-            indices = getattr(sampler, self.args.val_sampler + '_sampler')(nb_tiles=self.args.nb_tiles)
+            indices = getattr(sampler, self.args.sampler + '_sampler')(nb_tiles=self.args.nb_tiles)
         return indices
-
-
-
 
 def collate_variable_size(batch):
     data = [item[0].unsqueeze(0) for item in batch]
@@ -230,11 +229,11 @@ class Dataset_handler:
         """
         self.args = args
         self.use_val = args.use_val
-        self.num_class = args.num_class
-        self.predict = predict
+        self.num_class = args.num_class 
+        self.predict = predict 
         self.num_workers = args.num_workers 
-        self.dataset_train = self._get_dataset(use_train=True)
-        self.dataset_test = self._get_dataset(use_train=False)
+        self.dataset_train = self._get_dataset(use_train=True) 
+        self.dataset_test = self._get_dataset(use_train=False) 
         self.train_sampler, self.val_sampler = self._get_sampler(self.dataset_train, use_val=args.use_val)
 
     def get_loader(self, training):
