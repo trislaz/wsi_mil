@@ -1,6 +1,7 @@
 #%%
 #from .tile_functionnal import compute_distance
 from scipy.ndimage import rotate, distance_transform_bf
+from torchvision.transforms import RandomCrop
 from dppy.finite_dpps import FiniteDPP
 from .pds import PoissonDiskSampling
 from sklearn.gaussian_process.kernels import PairwiseKernel
@@ -9,6 +10,15 @@ import pickle
 import os 
 import torch
         
+
+def randomCrop(img, width, height):
+    mask = np.zeros(img.shape)
+    x = random.randint(0, img.shape[1] - width)
+    y = random.randint(0, img.shape[0] - height)
+    img = img[y:y+height, x:x+width]
+    mask[y:y+height, x:x+width] = 1
+    return mask
+
 class TileSampler:
     def __init__(self, args, wsi_path, info_folder):
         """Initialise a tile sampler object. Given a WSI, this sampler will automatize
@@ -35,6 +45,13 @@ class TileSampler:
             self.pds.sample(args.nb_tiles)
         self.name_wsi = name_wsi
         self.path_wsi = wsi_path
+        
+        if args.sampler in ['crop']:
+            path_infomat = os.path.join(info_folder, name_wsi + '_infomat.npy')
+            self.infomat = np.load(path_infomat)
+            self.mask = self.infomat >= 0
+            self.total_tiles = self.mask.sum()
+
         if args.sampler in ['predmap', 'predmap_all']:
             path_infomat = os.path.join(info_folder, name_wsi + '_infomat.npy')
             path_predmap = os.path.join(info_folder, name_wsi + '_predmap.npy' ) if os.path.exists(os.path.join(info_folder, name_wsi + '_predmap.npy' )) else None
@@ -71,6 +88,19 @@ class TileSampler:
 
     def all_sampler(self, nb_tiles):
         indices = list(range(self.total_tiles))
+        return indices
+
+    def crop_sampler(sef, nb_tiles):
+        xsize = int((torch.random.rand() * 0.7 + 0.3) * self.mask.shape[1])
+        ysize = int((torch.random.rand() * 0.7 + 0.3) * self.mask.shape[1])
+        empty = True
+        while empty:
+            crop = randomCrop(self.mask, xsize, ysize)
+            empty = ~(crop & self.mask).any()
+        tiles_indices = self.infomat[mask].flatten()
+        # On sample au sein du crop
+        sub_indices = torch.random.randint(0, len(tiles_indices), (nb_tiles, ))
+        indices = tiles_indices[sub_indices]
         return indices
 
     def predmap_random_sampler(self, nb_tiles):
