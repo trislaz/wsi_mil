@@ -97,6 +97,16 @@ class LinearBatchNorm(Module):
         x = self.block(x)
         return x
 
+class AverageMIL(Module):
+    def __init__(self, args):
+        super(AverageMIL, self).__init__()
+        self.args = args
+        self.linear_classif = Linear(args.feature_depth, args.num_class)
+    def forward(self, x):
+        x = x.mean(1) # x = (bs, ntiles, feature_depth)
+        x = self.linear_classif(x)
+        return x
+
 class MHMC_layers(Module):
     """
     MultiHeadMultiClass attention MIL, with several layers in the decision MLP.
@@ -562,6 +572,7 @@ class MILGene(Module):
                 'mhmc_layers': MHMC_layers,
                 'conan': Conan, 
                 '1s': model1S, 
+                'average': AverageMIL,
                 'sa': SelfAttentionMIL,
                 'transformermil': TransformerMIL
                 }     

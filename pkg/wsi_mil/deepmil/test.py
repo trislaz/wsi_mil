@@ -49,10 +49,19 @@ def test_xy(model, dataloader, table):
     test one model
     """
     model.network.eval()
+    nb_tiles = model.args.nb_tiles
     gt = []
+    totrep = 5
     for input_batch, target_batch, xy in dataloader:
+    ## Because sparseconvemil cannot support a different number of tiles sampled
+    ## at training and inference, we performe 10 samples of nb_tiles
+    ## for each test saple, and average the predictions.
         gt.append(np.array(target_batch))
-        _ = model.evaluate(input_batch, target_batch, xy)
+        for rep in range(totrep):
+            sample = torch.randint(0, input_batch.shape[1], size=(nb_tiles,)) 
+            end = (rep == totrep-1)
+            sampled_batch, sampled_xy = input_batch[:,sample, :], xy[:,sample,:]
+            _ = model.evaluate_kdpp(input_batch[:,sample, :], target_batch, end,  xy[:,sample,:])
     gt = np.vstack(gt)
     scores = model.results_val['scores']
     ids = [os.path.splitext(os.path.basename(x))[0].split('_embedded')[0] for x in dataloader.dataset.files]

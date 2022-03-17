@@ -44,6 +44,8 @@ def get_arguments(raw_args=None, train=True, config=None):
 
     parser.add_argument("--model_path", type=str, help="Path to the model to load", default=None)
     parser.add_argument("--inverse_test_train", action='store_true', help='inverse test/train subset -> experiments with few training data.')
+    parser.add_argument("--freeze_pooling", type=int, help='freeze the MIL architecture ? In which case, classif is linear. works with sparseconvmil', default=1)
+    parser.add_argument('--ssl_pretraining', type=int, help='load the weights of the ssl model ? works with sparseconvmil for the moment', default=1)
     args, _ = parser.parse_known_args(raw_args)
 
     # If there is a config file, we populate args with it (still keeping the default arguments)

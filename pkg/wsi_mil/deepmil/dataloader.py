@@ -206,7 +206,7 @@ class EmbeddedWSI_xy(EmbeddedWSI):
             indices = getattr(sampler, self.args.sampler+'_sampler')(nb_tiles=self.args.nb_tiles)
         else:
             sampler = self.sampler_dict[path]
-            indices = getattr(sampler, self.args.sampler + '_sampler')(nb_tiles=self.args.nb_tiles)
+            indices = getattr(sampler, self.args.val_sampler + '_sampler')(nb_tiles=self.args.nb_tiles)
         return indices
 
 def collate_variable_size(batch):
@@ -243,7 +243,7 @@ class Dataset_handler:
         """
         if training:
             collate = None if self.args.constant_size else collate_variable_size
-            dataloader_train = DataLoader(dataset=self.dataset_train, batch_size=self.args.batch_size, sampler=self.train_sampler, num_workers=self.num_workers, collate_fn=collate, drop_last=True)
+            dataloader_train = DataLoader(dataset=self.dataset_train, batch_size=self.args.batch_size, sampler=self.train_sampler, num_workers=self.num_workers, collate_fn=collate, drop_last=False)
             dataloader_val = DataLoader(dataset=self.dataset_train, batch_size=1, sampler=self.val_sampler, num_workers=self.num_workers)
             dataloaders = (dataloader_train, dataloader_val) 
         else: # Testing on the test set of predicting on the whole dataset (if predict = True)
@@ -278,7 +278,7 @@ class Dataset_handler:
         if use_val:
             labels_strat = [dataset.stratif_dict[x] for x in dataset.files]
             labels = labels_strat
-            splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=np.random.randint(100))
+            splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=np.random.randint(100))
             train_indices, val_indices = [x for x in splitter.split(X=labels_strat, y=labels_strat)][0]
             labels_train = np.array(labels)[np.array(train_indices)]
             print(len(labels_train))

@@ -369,7 +369,7 @@ class DeepMIL(Model):
         pred = self.label_encoder.inverse_transform([pred]).item()
         return proba.numpy(), pred
 
-    def evaluate_kdpp(self, x, y, end):
+    def evaluate_kdpp(self, x, y, end, xy=None):
         """
         takes x, y torch.Tensors.
         Predicts on x, stores y and the loss, and the outputs of the network.
@@ -377,11 +377,12 @@ class DeepMIL(Model):
         """
         y = y.to(self.args.device, dtype=torch.int64)
         x = x.to(self.args.device)
-        score = self._forward_no_grad(x).to('cpu')
+        score = self._forward_no_grad(x, xy).to('cpu')
         self.scores_dpp.append(score)
         loss = self.criterion(score, y.to('cpu'))       
         if end:
             scores = torch.cat(self.scores_dpp).mean(0)
+            print(scores)
             y = y.to('cpu', dtype=torch.int64)
             pred = int(self._predict_function(self._to_pseudo_proba(scores)).item())
             pred = self.label_encoder.inverse_transform([pred])
@@ -461,6 +462,7 @@ class DeepMIL(Model):
                 'inner_counter': self.counter,
                 'args': self.args,
                 'table_data': self.train_loader.dataset.table_data,
+                'files_train': self.train_loader.dataset.files,
                 'best_metrics': self.best_metrics, 
                 'label_encoder': self.train_loader.dataset.label_encoder
                 #'ipca': self.ipca
