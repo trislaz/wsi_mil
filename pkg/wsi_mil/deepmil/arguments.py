@@ -5,6 +5,7 @@ import os
 import copy
 import yaml
 
+from torch.utils import model_zoo
 def get_arguments(raw_args=None, train=True, config=None):
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 
@@ -54,11 +55,11 @@ def get_arguments(raw_args=None, train=True, config=None):
             dic = yaml.safe_load(f)
         args.__dict__.update(dic)
 
-    if args.model_path is not None and args.model_name != 'sparseconvmil':
-        ckpt = torch.load(args.model_path, map_location='cpu')
-        args_mod = ckpt['args_mil']
-        args.__dict__.update(args_mod.__dict__)
-
+#    if args.model_path is not None and args.model_name != 'sparseconvmil':
+#        ckpt = torch.load(args.model_path, map_location='cpu')
+#        args_mod = ckpt['args_mil']
+#        args.__dict__.update(args_mod.__dict__)
+#
     #table = pd.read_csv(os.path.join(args.wsi, 'table_data.csv'))
     #args.table_data = table
     table = pd.read_csv(args.table_data)

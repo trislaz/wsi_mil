@@ -38,7 +38,7 @@ def train_xy(model, dataloader):
     model.network.train()
     mean_loss = []
     epobatch = 1/len(dataloader) # How many epochs per batch ?
-    for input_batch, target_batch, xy in dataloader:
+    for (input_batch, xy), target_batch in dataloader:
         model.counter["batch"] += 1
         model.counter['epoch'] += epobatch
         [scheduler.step(model.counter['epoch']) for scheduler in model.schedulers]
@@ -65,7 +65,7 @@ def val(model, dataloader):
 def val_xy(model, dataloader):
     model.network.eval()
     mean_loss = []
-    for input_batch, target_batch, xy in dataloader:
+    for (input_batch, xy), target_batch in dataloader:
         target_batch = target_batch.to(model.device)
         ## Using the k-dpp evaluation = making several prediction for each 
         ## sample test, to sample the most tiles possible

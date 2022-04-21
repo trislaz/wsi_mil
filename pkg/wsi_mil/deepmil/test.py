@@ -52,7 +52,7 @@ def test_xy(model, dataloader, table):
     nb_tiles = model.args.nb_tiles
     gt = []
     totrep = 5
-    for input_batch, target_batch, xy in dataloader:
+    for (input_batch,xy), target_batch in dataloader:
     ## Because sparseconvemil cannot support a different number of tiles sampled
     ## at training and inference, we performe 10 samples of nb_tiles
     ## for each test saple, and average the predictions.

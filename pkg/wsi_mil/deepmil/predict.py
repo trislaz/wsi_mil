@@ -25,7 +25,10 @@ def load_model(model_path, device):
     args.ssl_pretraining=False
     args.device = device
     model = DeepMIL(args, label_encoder=checkpoint['label_encoder'], ipca=None)##checkpoint['ipca'])
-    model.network.load_state_dict(checkpoint['state_dict'], strict=False)
+    model.network.load_state_dict(checkpoint['state_dict'])
+    # Check if weights are loaded properly
+    for name, param in model.network.named_parameters():
+        assert (param.cpu() == checkpoint['state_dict'][name]).all().item(), 'Weights not loaded properly'
     model.network.eval()
     model.table_data = checkpoint['table_data'] if 'table_data' in checkpoint else model.args.table_data
     return model

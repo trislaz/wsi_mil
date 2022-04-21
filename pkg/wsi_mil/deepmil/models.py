@@ -164,35 +164,18 @@ class DeepMIL(Model):
 
         :return nn.Module: MIL network.
         """
-        if self.args.model_path is not None:
-            if self.args.model_name == 'sparseconvmil':
-                from collections import OrderedDict
-                import wsi_mil.deepmil.models_marvin as models_marvin
-                resnet_model, _ = models_marvin.get_resnet_model('resnet18', 'imagenet')
-                _, sparse_subresnet = models_marvin.cut_resnet_dense_sparse(resnet_model, 4)
-                pooling_model = models_marvin.SparseConvMIL(sparse_subresnet, 500, False)
-                n_classes = self.args.num_class
-                linear_classifier = torch.nn.Linear(512, n_classes, False)
-                freeze_pooling_model = self.args.freeze_pooling
-                pretrain = self.args.ssl_pretraining
-                whole_model = models_marvin.LinearWithMIL(pooling_model, linear_classifier, freeze_pooling_model)
-                if pretrain:
-                    state_dict = torch.load(self.args.model_path, map_location='cpu')
-                    state_dict = OrderedDict({k.replace('backbone', 'mil_model'): v for k, v in state_dict.items()
-                                          if not k.startswith('projector') and not k.startswith('predictor')})
-                    whole_model.load_state_dict(state_dict, strict=False) 
-                net = whole_model
-            else:
-                ckpt = torch.load(self.args.model_path, map_location='cpu')
-                sd = ckpt['state_dict']
-                net = MILGene(ckpt['args_mil'])       
-                for k in list(sd.keys()):
-                    if k.startswith('module.encoder.'):
-                        sd[k[len('module.encoder.'):]] = sd[k]
-                    del sd[k]
-                msg = net.load_state_dict(sd, strict=False)
-                net.mil.classifier.add_module(module=torch.nn.Linear(ckpt['args_mil'].num_class, self.args.num_class), name='fc')
-                net.mil.num_class = self.args.num_class 
+        if self.args.model_path is not None and self.args.model_name != 'sparseconvmil':
+            ## TODO add that part INSIDE the network initialisation....
+            ckpt = torch.load(self.args.model_path, map_location='cpu')
+            sd = ckpt['state_dict']
+            net = MILGene(self.args)#ckpt['args_mil'])       
+            for k in list(sd.keys()):
+                if k.startswith('module.encoder.'):
+                    sd[k[len('module.encoder.'):]] = sd[k]
+                del sd[k]
+            msg = net.load_state_dict(sd, strict=False)
+            net.mil.classifier.add_module(module=torch.nn.Linear(512, self.args.num_class), name='fc')
+            net.mil.num_class = self.args.num_class 
             #Because num_class for a MIL-SSL is the representation dimension (512) have to change it to the final fc dim = real number of class of the downstream task
         else:
             net = MILGene(args=self.args)
@@ -262,7 +245,7 @@ class DeepMIL(Model):
             if xy is None:
                 out = self.network(x)
             else:
-                out = self.network(x, xy)
+                out = self.network((x, xy))
             out = LogSoftmax(dim=-1)(out)
         out = out.detach()
         return out
@@ -416,7 +399,7 @@ class DeepMIL(Model):
 
     def forward(self, x, xy=None):
         if xy is not None:
-            out = self.network(x, xy)
+            out = self.network((x, xy))
         else:
             out = self.network(x)
         return out

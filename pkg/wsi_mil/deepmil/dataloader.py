@@ -30,7 +30,7 @@ class EmbeddedWSI(Dataset):
         * a $args.target_name column, of course
         * a test columns, stating the test_fold number of each image.
     """
-    def __init__(self, args, use_train, predict=False):
+    def __init__(self, args, use_train, predict=False, transform=None, use_table=True):
         """Initialises the MIL model.
         
         Parameters
@@ -50,14 +50,17 @@ class EmbeddedWSI(Dataset):
         """
         super(EmbeddedWSI, self).__init__()
         self.label_encoder = None
+        self.use_table = use_table
         self.args = args
+        self.transform = transform
         self.embeddings = os.path.join(args.wsi, 'mat_pca')
 #        self.ipca = load(os.path.join(args.wsi, 'pca', 'pca_tiles.joblib'))
+        self.loc = os.path.join(args.wsi, 'xy_npy')
         self.info = os.path.join(args.wsi, 'info')
         self.use_train = use_train
         self.predict = predict
         self.table_data = pd.read_csv(args.table_data) if isinstance(args.table_data, str) else args.table_data
-        self.files, self.target_dict, self.sampler_dict, self.stratif_dict, self.label_encoder = self._make_db()
+        self.files, self.target_dict, self.sampler_dict, self.stratif_dict = self._make_db()
         self.constant_size = (args.nb_tiles != 0)
         
     def _make_db(self):
@@ -72,21 +75,31 @@ class EmbeddedWSI(Dataset):
 
         :return [files, target_dict, sampler_dict, stratif_dict, label_encoder] 
         """
-        table, label_encoder = self.transform_target()
-        target_dict = dict() #Key = path to the file, value=target
-        sampler_dict = dict()
-        stratif_dict = dict()
-        names = table['ID'].values
-        files_filtered =[]
-        for name in names:
-            filepath = os.path.join(self.embeddings, name+'_embedded.npy')
-            if os.path.exists(filepath):
-                if self._is_in_db(name):
-                    files_filtered.append(filepath)
-                    target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
-                    sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
-                    stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
-        return files_filtered, target_dict, sampler_dict, stratif_dict, label_encoder
+        if not self.use_table:
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            files_filtered = glob(os.path.join(self.embeddings, '*.npy'))
+            for filepath in files_filtered:
+                target_dict[filepath] = np.random.randint(2)
+                sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                stratif_dict[filepath] = target_dict[filepath]
+        else:
+            table, self.label_encoder = self.transform_target()
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            names = table['ID'].values
+            files_filtered =[]
+            for name in names:
+                filepath = os.path.join(self.embeddings, name+'_embedded.npy')
+                if os.path.exists(filepath):
+                    if self._is_in_db(name):
+                        files_filtered.append(filepath)
+                        target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
+                        sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                        stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
+        return files_filtered, target_dict, sampler_dict, stratif_dict
 
     def transform_target(self):
         """Adds to table a numerical encoding of the target.
@@ -121,6 +134,8 @@ class EmbeddedWSI(Dataset):
         path = self.files[idx]
         mat = np.load(path)[:,:self.args.feature_depth]
         mat = self._select_tiles(path, mat)
+        if self.transform is not None:
+            mat = self.transform(mat)
         mat = torch.from_numpy(mat).float() #ToTensor
         target = self.target_dict[path]
         return mat, target
@@ -163,35 +178,48 @@ class EmbeddedWSI_xy(EmbeddedWSI):
 
         :return [files, target_dict, sampler_dict, stratif_dict, label_encoder] 
         """
-        table, label_encoder = self.transform_target()
-        target_dict = dict() #Key = path to the file, value=target
-        sampler_dict = dict()
-        stratif_dict = dict()
-        info_dict = dict()
-        names = table['ID'].values
-        files_filtered =[]
-        for name in names:
-            filepath = os.path.join(self.embeddings, name+'_embedded.npy')
-            if os.path.exists(filepath):
-                if self._is_in_db(name):
-                    files_filtered.append(filepath)
-                    target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
-                    sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
-                    stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
-                    with open(os.path.join(self.info, name+'_infodict.pickle'), 'rb') as dico:
-                        info_dict[filepath] = pickle.load(dico)
-        self.info_dict = info_dict
-        return files_filtered, target_dict, sampler_dict, stratif_dict, label_encoder
+        if not self.use_table:
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            loc_dict = dict()
+            files_filtered = glob(os.path.join(self.embeddings, '*.npy'))
+            for filepath in files_filtered:
+                target_dict[filepath] = np.random.randint(2)
+                sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                stratif_dict[filepath] = target_dict[filepath]
+                loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy')))
+        else:
+            table, self.label_encoder = self.transform_target()
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            loc_dict = dict()
+            names = table['ID'].values
+            files_filtered =[]
+            for name in names:
+                filepath = os.path.join(self.embeddings, name+'_embedded.npy')
+                if os.path.exists(filepath):
+                    if self._is_in_db(name):
+                        files_filtered.append(filepath)
+                        target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
+                        sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                        stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
+                        loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy')))
+        self.loc_dict = loc_dict
+        return files_filtered, target_dict, sampler_dict, stratif_dict
 
     def __getitem__(self, idx):
         path = self.files[idx]
         mat = np.load(path)[:,:self.args.feature_depth]
+        xy = self.loc_dict[path]
         indices = self._select_tiles(path, mat)
         mat = mat[indices, :]
-        xy = np.vstack([np.array((round(self.info_dict[path][x]['x']/4), round(self.info_dict[path][x]['y']/4)))  for x in indices])
-        mat = torch.from_numpy(mat).float() 
+        xy = xy[indices, :] / 4
         target = self.target_dict[path]
-        return mat, target, xy
+        if self.transform is not None:
+            mat, xy = self.transform((mat, xy))
+        return (mat, xy), target
 
     def _select_tiles(self, path, mat):
         """_select_tiles.
