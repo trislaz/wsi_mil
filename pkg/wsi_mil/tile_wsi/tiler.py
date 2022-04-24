@@ -15,6 +15,7 @@ from skimage.morphology import dilation
 from skimage.color import rgb2gray
 from skimage.exposure import histogram
 from skimage._shared.utils import warn
+from staintools import StainNormalizer
 import openslide
 
 from .utils import make_auto_mask, patch_sampling, get_size, visualise_cut, get_image
@@ -50,6 +51,8 @@ class ImageTiler:
         self.model_path = args.model_path 
         self.infomat = None
         self.tiler = args.tiler
+        self.normalize = args.normalizer is not None
+        self.normalizer = self._get_normalizer(args.normalizer)
         self.name_wsi, self.ext_wsi = os.path.splitext(os.path.basename(self.path_wsi))
         # If nf is used, it manages the output paths.
         self.outpath = self._set_out_path()
@@ -63,6 +66,15 @@ class ImageTiler:
         self.rgb_img = np.array(self.rgb_img)[:,:,:3]
         self.mask_tolerance = args.mask_tolerance
 
+    def _get_normalizer(self, normalizer):
+        if normalizer is None:
+            return None
+        else:
+            target = np.array(Image.open('/cluster/CBIO/data1/data4/tlazard/data/normalisation_macenko/image_macenko_norm.png'))[:,:,:3]
+            normalizer = StainNormalizer(normalizer)
+            normalizer.fit(target)
+            return normalizer
+
     def _set_out_path(self):
         """_set_out_path. Sets the path to store the outputs of the tiling.
         Creates them if they do not exist yet.
@@ -73,12 +85,18 @@ class ImageTiler:
         outpath['info'] = '.' if nf else os.path.join(self.path_outputs, 'info') 
         outpath['visu'] = '.' if nf else os.path.join(self.path_outputs, 'visu')
         if tiler == 'simple':
-            outpath['tiles'] = '.' if nf else os.path.join(self.path_outputs, self.name_wsi)
+            outpath['tiles'] = '.' if nf else os.path.join(self.path_outputs,'tiled', self.name_wsi)
         else:
             outpath['tiles'] = '.' if nf else os.path.join(self.path_outputs, 'mat')
         #Creates the dirs.
         [os.makedirs(v, exist_ok=True) for k,v in outpath.items()]
         return outpath
+
+    def _write_mask(self, mask):
+        path_mask = os.path.join(self.path_mask, os.path.splitext(os.path.basename(self.path_wsi))[0]+'.npy')
+        if not os.path.exists(path_mask):
+            np.save(path_mask, mask)
+        return 
  
     def _get_mask_function(self):
         """
@@ -100,12 +118,13 @@ class ImageTiler:
         """
         self.mask_function = self._get_mask_function()
         tiler = getattr(self, self.tiler + '_tiler')
-        param_tiles = patch_sampling(slide=self.slide, mask_level=self.mask_level, mask_function=self.mask_function, 
+        sample = patch_sampling(slide=self.slide, mask_level=self.mask_level, mask_function=self.mask_function, 
             analyse_level=self.level, patch_size=self.size, mask_tolerance = self.mask_tolerance)
+        self._write_mask(sample['mask'])
         if self.make_info:
-            self._make_infodocs(param_tiles)
-            self._make_visualisations(param_tiles)
-        tiler(param_tiles)
+            self._make_infodocs(sample['params'])
+            self._make_visualisations(sample['params'])
+        tiler(sample['params'])
 
     def _make_visualisations(self, param_tiles):
         """_make_visualisations.
@@ -179,8 +198,12 @@ class ImageTiler:
         if self.max_nb_tiles is not None:
             n = min(self.max_nb_tiles, len(param_tiles))
             param_tiles = np.array(param_tiles)[np.random.choice(range(len(param_tiles)), n, replace=False)]
+        if len(param_tiles) > 2000:
+            param_tiles = np.array(param_tiles)[np.random.randint(0, len(param_tiles), 2000),:]
         for o, para in enumerate(param_tiles):
             patch = get_image(slide=self.path_wsi, para=para, numpy=False)
+            if self.normalize:
+                patch = Image.fromarray(self.normalizer.transform(np.array(patch)[:,:,:3]))
             path_tile = os.path.join(self.outpath['tiles'], f"tile_{o}.png")
             patch.save(path_tile)
             del patch

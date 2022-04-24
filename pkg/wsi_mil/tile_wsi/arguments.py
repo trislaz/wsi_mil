@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+import os
 import torch
 
 def get_arguments():
@@ -16,6 +17,10 @@ def get_arguments():
 
     parser.add_argument('--nf', action='store_true', help='Use this flag when using the nextflow pipeline. Either, dont.')
     parser.add_argument('--max_nb_tiles', type=int, help='maximum number of tiles to select uniformly. If None, takes all the tiles.', default=None)
+    parser.add_argument('--normalizer', default=None, help='available: macenko | vahadane')
     args = parser.parse_args()
     args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if args.path_mask == 'no':
+        args.path_mask = os.path.join(args.path_outputs, 'masks')
+        os.makedirs(args.path_mask, exist_ok=True)
     return args

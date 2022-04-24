@@ -157,9 +157,9 @@ def make_auto_mask(slide, mask_level):
     im_gray = clear_border(im_gray, prop=30)
     size = im_gray.shape
     im_gray = im_gray.flatten()
-    pixels_int = im_gray[np.logical_and(im_gray > 0.1, im_gray < 0.98)]
+    pixels_int = im_gray[np.logical_and(im_gray > 0.02, im_gray < 0.98)]
     t = threshold_otsu(pixels_int)
-    mask = opening(closing(np.logical_and(im_gray<t, im_gray>0.1).reshape(size), selem=square(2)), selem=square(2))
+    mask = opening(closing(np.logical_and(im_gray<t, im_gray>0.02).reshape(size), selem=square(2)), selem=square(2))
     final_mask = mask
     return mask
 
@@ -456,6 +456,6 @@ def patch_sampling(slide, seed=None, mask_level=None,
                             mask_tolerance=mask_tolerance,
                             margin=margin_mask_level)
     return_list = parameter
-    return return_list
+    return {'params':return_list,'mask':wsi_mask}
 
 

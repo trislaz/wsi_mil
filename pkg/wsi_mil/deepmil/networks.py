@@ -5,8 +5,9 @@ use of pytorch.
 import functools
 from torch.nn import (Linear, Module, Sequential, LeakyReLU, Tanh, Softmax, Identity, MaxPool2d, Conv3d,
                       Sigmoid, Conv1d, Conv2d, ReLU, Dropout, BatchNorm1d, BatchNorm2d, InstanceNorm1d, 
-                      MaxPool3d, functional, LayerNorm, MultiheadAttention, LogSoftmax, ModuleList)
+                      MaxPool3d, functional, LayerNorm, MultiheadAttention, LogSoftmax, ModuleList, AvgPool2d)
 from torch.nn.modules import TransformerEncoder, TransformerEncoderLayer
+from torchvision.models import resnet18
 import copy
 from torch.nn.parameter import Parameter
 import torch
@@ -571,16 +572,45 @@ class MILGene(Module):
     def __init__(self, args):
         super(MILGene, self).__init__()
         self.args = args
-        self.features_tiles = Identity(args)
+        self.features_tiles = self._get_tile_encoder(args)
         self.mil = self.models[args.model_name](args)
+
+    def _get_tile_encoder(self, args):
+        if args.tile_encoder:
+            ## Cutted resnet "à la marvin"
+            ## Must be followed by a torch.mean(dim(-1, -2)) when forward passing
+            encoder = eval(args.tile_encoder)(pretrained=True)
+            cut_block = 4
+            cut_resnet = []
+            for c, child in enumerate(encoder.children()):
+                if c < 3 + cut_block:
+                    cut_resnet.append(child)
+            net = Sequential(*cut_resnet)
+        else:
+            net = Identity()
+        return net
+
+    def forward_encoder_tile(self, x):
+        """
+        In theory, entry is Bs x ntiles x 3 x H x W
+        """
+
+        if self.args.tile_encoder:
+            bs, nb_tiles = x.shape[:2]
+            x = x.flatten(0, 1)
+            x = self.features_tiles(x)
+            x = torch.mean(x, dim=(-1, -2))
+            x = x.view(bs, nb_tiles, 256)
+        else:
+            x = self.features_tiles(x)
+        return x
 
     def forward(self, x):
         if self.args.constant_size:
             batch_size, nb_tiles = x.shape[0], x.shape[1]
         else:
             batch_size, nb_tiles = 1, x.shape[-2]
-        x = self.features_tiles(x)
-        print(x.shape)
+        x = self.forward_encoder_tile(x)
         x = x.view(batch_size, nb_tiles, self.args.feature_depth)
         x = self.mil(x)
         return x
