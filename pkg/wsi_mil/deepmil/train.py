@@ -34,6 +34,19 @@ def train(model, dataloader):
     model.mean_train_loss = np.mean(mean_loss)
     print('train_loss: {}'.format(np.mean(mean_loss)))
 
+def train_xy(model, dataloader):
+    model.network.train()
+    mean_loss = []
+    epobatch = 1/len(dataloader) # How many epochs per batch ?
+    for (input_batch, xy), target_batch in dataloader:
+        model.counter["batch"] += 1
+        model.counter['epoch'] += epobatch
+        [scheduler.step(model.counter['epoch']) for scheduler in model.schedulers]
+        loss = model.optimize_parameters(input_batch, target_batch, xy)
+        mean_loss.append(loss)
+    model.mean_train_loss = np.mean(mean_loss)
+    print('train_loss: {}'.format(np.mean(mean_loss)))
+
 def val(model, dataloader):
     model.network.eval()
     mean_loss = []
@@ -43,24 +56,44 @@ def val(model, dataloader):
         mean_loss.append(loss)
     model.mean_val_loss = np.mean(mean_loss)
     to_write = model.flush_val_metrics()
-    writes_metrics(model.writer, to_write, model.counter['epoch']) 
+    #writes_metrics(model.writer, to_write, model.counter['epoch']) 
     state = model.make_state()
     print('mean val loss {}'.format(np.mean(mean_loss)))
-    model.update_learning_rate(model.mean_val_loss)
+    #/model.update_learning_rate(model.mean_val_loss)
+    model.early_stopping(model.args.sgn_metric * to_write[model.args.ref_metric], state)
+
+def val_xy(model, dataloader):
+    model.network.eval()
+    mean_loss = []
+    for (input_batch, xy), target_batch in dataloader:
+        target_batch = target_batch.to(model.device)
+        ## Using the k-dpp evaluation = making several prediction for each 
+        ## sample test, to sample the most tiles possible
+        loss = model.evaluate(input_batch, target_batch, xy)
+        mean_loss.append(loss)
+    model.mean_val_loss = np.mean(mean_loss)
+    to_write = model.flush_val_metrics()
+    #writes_metrics(model.writer, to_write, model.counter['epoch']) 
+    state = model.make_state()
+    print('mean val loss {}'.format(np.mean(mean_loss)))
+    #model.update_learning_rate(model.mean_val_loss)
     model.early_stopping(model.args.sgn_metric * to_write[model.args.ref_metric], state)
 
 def main(raw_args=None):
     args = get_arguments(raw_args=raw_args, train=True)
     model = DeepMIL(args=args, with_data=True)
-    model.get_summary_writer()
+    train_fct = train_xy if args.model_name == 'sparseconvmil' else train
+    val_fct = val_xy if args.model_name == 'sparseconvmil' else val
+    print(model.network)
+    #model.get_summary_writer()
     while model.counter['epoch'] < args.epochs:
         print("Epochs {}".format(round(model.counter['epoch'])))
-        train(model=model, dataloader=model.train_loader)
+        train_fct(model=model, dataloader=model.train_loader)
         if args.use_val:
-            val(model=model, dataloader=model.val_loader)
+            val_fct(model=model, dataloader=model.val_loader)
         if model.early_stopping.early_stop:
             break
         if not args.use_val:
             torch.save(model.make_state(), 'model_best.pt.tar')
-    model.writer.close()
+    #model.writer.close()
 

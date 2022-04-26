@@ -1,4 +1,5 @@
 from torch.utils.data import (Dataset, DataLoader, SubsetRandomSampler)
+import pickle
 from sklearn.preprocessing import LabelEncoder
 from joblib import load
 import pandas as pd
@@ -29,7 +30,7 @@ class EmbeddedWSI(Dataset):
         * a $args.target_name column, of course
         * a test columns, stating the test_fold number of each image.
     """
-    def __init__(self, args, use_train, predict=False):
+    def __init__(self, args, use_train, predict=False, transform=None, use_table=True):
         """Initialises the MIL model.
         
         Parameters
@@ -49,14 +50,17 @@ class EmbeddedWSI(Dataset):
         """
         super(EmbeddedWSI, self).__init__()
         self.label_encoder = None
+        self.use_table = use_table
         self.args = args
+        self.transform = transform
         self.embeddings = os.path.join(args.wsi, 'mat_pca')
 #        self.ipca = load(os.path.join(args.wsi, 'pca', 'pca_tiles.joblib'))
+        self.loc = os.path.join(args.wsi, 'xy_npy')
         self.info = os.path.join(args.wsi, 'info')
         self.use_train = use_train
         self.predict = predict
         self.table_data = pd.read_csv(args.table_data) if isinstance(args.table_data, str) else args.table_data
-        self.files, self.target_dict, self.sampler_dict, self.stratif_dict, self.label_encoder = self._make_db()
+        self.files, self.target_dict, self.sampler_dict, self.stratif_dict = self._make_db()
         self.constant_size = (args.nb_tiles != 0)
         
     def _make_db(self):
@@ -71,21 +75,31 @@ class EmbeddedWSI(Dataset):
 
         :return [files, target_dict, sampler_dict, stratif_dict, label_encoder] 
         """
-        table, label_encoder = self.transform_target()
-        target_dict = dict() #Key = path to the file, value=target
-        sampler_dict = dict()
-        stratif_dict = dict()
-        names = table['ID'].values
-        files_filtered =[]
-        for name in names:
-            filepath = os.path.join(self.embeddings, name+'_embedded.npy')
-            if os.path.exists(filepath):
-                if self._is_in_db(name):
-                    files_filtered.append(filepath)
-                    target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
-                    sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
-                    stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
-        return files_filtered, target_dict, sampler_dict, stratif_dict, label_encoder
+        if not self.use_table:
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            files_filtered = glob(os.path.join(self.embeddings, '*.npy'))
+            for filepath in files_filtered:
+                target_dict[filepath] = np.random.randint(2)
+                sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                stratif_dict[filepath] = target_dict[filepath]
+        else:
+            table, self.label_encoder = self.transform_target()
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            names = table['ID'].values
+            files_filtered =[]
+            for name in names:
+                filepath = os.path.join(self.embeddings, name+'_embedded.npy')
+                if os.path.exists(filepath):
+                    if self._is_in_db(name):
+                        files_filtered.append(filepath)
+                        target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
+                        sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                        stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
+        return files_filtered, target_dict, sampler_dict, stratif_dict
 
     def transform_target(self):
         """Adds to table a numerical encoding of the target.
@@ -107,6 +121,9 @@ class EmbeddedWSI(Dataset):
         if 'test' in table.columns and (not self.predict):
             is_in_train = (table[table['ID'] == name]['test'] != self.args.test_fold).values[0] # "keep if i'm not test"
             is_in_test = (table[table['ID'] == name]['test'] == self.args.test_fold).values[0] 
+            if self.args.inverse_test_train:
+                is_in_train = ~is_in_train
+                is_in_test = ~is_in_test
             is_in_db = is_in_train if self.use_train else is_in_test
         return is_in_db
 
@@ -117,6 +134,8 @@ class EmbeddedWSI(Dataset):
         path = self.files[idx]
         mat = np.load(path)[:,:self.args.feature_depth]
         mat = self._select_tiles(path, mat)
+        if self.transform is not None:
+            mat = self.transform(mat)
         mat = torch.from_numpy(mat).float() #ToTensor
         target = self.target_dict[path]
         return mat, target
@@ -139,6 +158,85 @@ class EmbeddedWSI(Dataset):
             mat = mat[indices,:]
         return mat
 
+class EmbeddedWSI_xy(EmbeddedWSI):
+    """
+    +++++
+    This implem outputs the infodict of each tiles for a given WSI.
+    +++++
+
+
+    """
+    def _make_db(self):
+        """_make_db.
+        Creates the dataset. Namely, populates the files list
+        with the selected WSI.
+        Populates also 3 dictionnary, with keys the elements of the files list
+        and values : 
+            * target_dict : their target values
+            * stratif_dict : their stratif values (present in the table_data).
+            * sampler_dict : their associated TileSampler object.
+
+        :return [files, target_dict, sampler_dict, stratif_dict, label_encoder] 
+        """
+        if not self.use_table:
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            loc_dict = dict()
+            files_filtered = glob(os.path.join(self.embeddings, '*.npy'))
+            for filepath in files_filtered:
+                target_dict[filepath] = np.random.randint(2)
+                sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                stratif_dict[filepath] = target_dict[filepath]
+                loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy')))
+        else:
+            table, self.label_encoder = self.transform_target()
+            target_dict = dict() #Key = path to the file, value=target
+            sampler_dict = dict()
+            stratif_dict = dict()
+            loc_dict = dict()
+            names = table['ID'].values
+            files_filtered =[]
+            for name in names:
+                filepath = os.path.join(self.embeddings, name+'_embedded.npy')
+                if os.path.exists(filepath):
+                    if self._is_in_db(name):
+                        files_filtered.append(filepath)
+                        target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
+                        sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
+                        stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
+                        loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy')))
+        self.loc_dict = loc_dict
+        return files_filtered, target_dict, sampler_dict, stratif_dict
+
+    def __getitem__(self, idx):
+        path = self.files[idx]
+        mat = np.load(path)[:,:self.args.feature_depth]
+        xy = self.loc_dict[path]
+        indices = self._select_tiles(path, mat)
+        mat = mat[indices, :]
+        xy = xy[indices, :] / 4
+        target = self.target_dict[path]
+        if self.transform is not None:
+            mat, xy = self.transform((mat, xy))
+        return (mat, xy), target
+
+    def _select_tiles(self, path, mat):
+        """_select_tiles.
+        Samples the tiles in the WSI.
+
+        :param path: str: path of the current WSI.
+        :param mat: ndarray: matrix of the embedded wsi.
+        return ndarray: matrix of the subsampled WSI.
+        """
+        if self.use_train & self.constant_size:
+            sampler = self.sampler_dict[path]
+            indices = getattr(sampler, self.args.sampler+'_sampler')(nb_tiles=self.args.nb_tiles)
+        else:
+            sampler = self.sampler_dict[path]
+            indices = getattr(sampler, self.args.val_sampler + '_sampler')(nb_tiles=self.args.nb_tiles)
+        return indices
+
 def collate_variable_size(batch):
     data = [item[0].unsqueeze(0) for item in batch]
     target = [torch.FloatTensor([item[1]]) for item in batch]
@@ -159,11 +257,11 @@ class Dataset_handler:
         """
         self.args = args
         self.use_val = args.use_val
-        self.num_class = args.num_class
-        self.predict = predict
+        self.num_class = args.num_class 
+        self.predict = predict 
         self.num_workers = args.num_workers 
-        self.dataset_train = self._get_dataset(use_train=True)
-        self.dataset_test = self._get_dataset(use_train=False)
+        self.dataset_train = self._get_dataset(use_train=True) 
+        self.dataset_test = self._get_dataset(use_train=False) 
         self.train_sampler, self.val_sampler = self._get_sampler(self.dataset_train, use_val=args.use_val)
 
     def get_loader(self, training):
@@ -173,7 +271,7 @@ class Dataset_handler:
         """
         if training:
             collate = None if self.args.constant_size else collate_variable_size
-            dataloader_train = DataLoader(dataset=self.dataset_train, batch_size=self.args.batch_size, sampler=self.train_sampler, num_workers=self.num_workers, collate_fn=collate, drop_last=True)
+            dataloader_train = DataLoader(dataset=self.dataset_train, batch_size=self.args.batch_size, sampler=self.train_sampler, num_workers=self.num_workers, collate_fn=collate, drop_last=False)
             dataloader_val = DataLoader(dataset=self.dataset_train, batch_size=1, sampler=self.val_sampler, num_workers=self.num_workers)
             dataloaders = (dataloader_train, dataloader_val) 
         else: # Testing on the test set of predicting on the whole dataset (if predict = True)
@@ -187,7 +285,10 @@ class Dataset_handler:
         testing fold, else of the training folds.
         :return EmbeddedWSI
         """
-        dataset = EmbeddedWSI(self.args, use_train=use_train, predict=self.predict)
+        if self.args.model_name != 'sparseconvmil':
+            dataset = EmbeddedWSI(self.args, use_train=use_train, predict=self.predict)
+        else:
+            dataset = EmbeddedWSI_xy(self.args, use_train=use_train, predict=self.predict)
         return dataset
     
     def _get_sampler(self, dataset, use_val=True):
@@ -208,6 +309,7 @@ class Dataset_handler:
             splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=np.random.randint(100))
             train_indices, val_indices = [x for x in splitter.split(X=labels_strat, y=labels_strat)][0]
             labels_train = np.array(labels)[np.array(train_indices)]
+            print(len(labels_train))
             labels_train_strat = np.array(labels_strat)[np.array(train_indices)]
             val_sampler = SubsetRandomSampler(val_indices)
             train_sampler = WeightedRandomSamplerFromList(self._get_weights_sampling(labels_train_strat, wr_whole_label=self.args.sample_wr_whole_label, no_strat_sampling=self.args.no_strat_sampling), train_indices, len(train_indices))

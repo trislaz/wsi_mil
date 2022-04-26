@@ -1,8 +1,11 @@
 """
 Implements the networks that can be used in train. 
 use of pytorch.
+author = trislaz
 """
 import functools
+import contextlib
+import os
 from torch.nn import (Linear, Module, Sequential, LeakyReLU, Tanh, Softmax, Identity, MaxPool2d, Conv3d,
                       Sigmoid, Conv1d, Conv2d, ReLU, Dropout, BatchNorm1d, BatchNorm2d, InstanceNorm1d, 
                       MaxPool3d, functional, LayerNorm, MultiheadAttention, LogSoftmax, ModuleList, AvgPool2d)
@@ -16,12 +19,14 @@ import torch.nn.functional as F
 from torchvision import transforms
 import numpy as np
 import torchvision
+from collections import OrderedDict
+import wsi_mil.deepmil.models_marvin as models_marvin
 
 def is_in_args(args, name, default):
     """Checks if the parammeter is specified in the args Namespace
     If not, attributes him the default value
     """
-    if name in args:
+    if name in args.__dict__:
         para = getattr(args, name)
     else:
         para = default
@@ -98,6 +103,16 @@ class LinearBatchNorm(Module):
         x = self.block(x)
         return x
 
+class AverageMIL(Module):
+    def __init__(self, args):
+        super(AverageMIL, self).__init__()
+        self.args = args
+        self.linear_classif = Linear(args.feature_depth, args.num_class)
+    def forward(self, x):
+        x = x.mean(1) # x = (bs, ntiles, feature_depth)
+        x = self.linear_classif(x)
+        return x
+
 class MHMC_layers(Module):
     """
     MultiHeadMultiClass attention MIL, with several layers in the decision MLP.
@@ -128,7 +143,6 @@ class MHMC_layers(Module):
         for i in range(self.n_layers_classif):
             classifier.append(LinearBatchNorm(width_fe, width_fe, args.dropout, args.constant_size))
         classifier.append(Linear(width_fe, self.num_class))
-        classifier.append(LogSoftmax(-1))
         self.classifier = Sequential(*classifier)
 
     def forward(self, x):
@@ -178,14 +192,13 @@ class GeneralMIL(Module):
 
         self.pooling_function = PoolingFunction(self.args)
 
-        classifier = []
+        mlp = []
         dim_classif = self._get_first_dim(self.args)
-        classifier.append(LinearBatchNorm(int(dim_classif), width_fe, self.args.dropout, self.args.constant_size))
+        mlp.append(LinearBatchNorm(int(dim_classif), width_fe, self.args.dropout, self.args.constant_size))
         for i in range(self.n_layers_classif):
-            classifier.append(LinearBatchNorm(width_fe, width_fe, self.args.dropout, self.args.constant_size))
-        classifier.append(Linear(width_fe, self.num_class))
-        classifier.append(LogSoftmax(-1))
-        self.classifier = Sequential(*classifier)
+            mlp.append(LinearBatchNorm(width_fe, width_fe, self.args.dropout, self.args.constant_size))
+        self.mlp = Sequential(*mlp)
+        self.classifier = Linear(width_fe, self.num_class)
 
     def _get_first_dim(self, args):
         if args.pooling_fct == 'conan':
@@ -195,17 +208,19 @@ class GeneralMIL(Module):
 
     def forward(self, x):
         """
-    Input x of size BxNxF where :
-            * F is the dimension of feature space
-            * N is number of patche
-    """
-        bs, nbt, _ = x.shape
-        if self.args.instance_transf:
-            x = x.view((bs*nbt, -1))
-            x = self.instance_transf(x)
-            x = x.view((bs, nbt, -1))
-        slide = self.pooling_function(x)
-        out = self.classifier(slide)
+        Input x of size BxNxF where :
+                * F is the dimension of feature space
+                * N is number of patche
+        """
+        with torch.no_grad() if self.args.freeze_pooling else contextlib.suppress():
+            bs, nbt, _ = x.shape
+            if self.args.instance_transf:
+                x = x.view((bs*nbt, -1))
+                x = self.instance_transf(x)
+                x = x.view((bs, nbt, -1))
+            slide = self.pooling_function(x)
+            out = self.mlp(slide)
+        out = self.classifier(out)
         out = out.view((bs, self.num_class))
         return out
 
@@ -554,6 +569,24 @@ class TransformerMIL(Module):
         x = self.mil(x)
         return x
 
+class SparseConvMIL(Module):
+    def __init__(self, args):
+        super(SparseConvMIL, self).__init__()
+        self.args = args
+        self.model_path = args.model_path
+        resnet_model, _ = models_marvin.get_resnet_model('resnet18', 'imagenet')
+        _, sparse_subresnet = models_marvin.cut_resnet_dense_sparse(resnet_model, 4)
+        pooling_model = models_marvin.SparseConvMIL(sparse_subresnet, 512, False) #downsample 500 before
+        n_classes = args.num_class
+        linear_classifier = torch.nn.Linear(512, n_classes, False)
+        freeze_pooling_model = args.freeze_pooling
+        whole_model = models_marvin.LinearWithMIL(pooling_model, linear_classifier, freeze_pooling_model)
+        self.net = whole_model
+
+    def forward(self, x):
+        x = self.net(x['x'], x['loc'])
+        return x
+
 class MILGene(Module):
     """MILGene.
     MIL generator. This framework makes things easy if we want to plug the 
@@ -565,15 +598,18 @@ class MILGene(Module):
                 'mhmc_layers': MHMC_layers,
                 'conan': Conan, 
                 '1s': model1S, 
+                'average': AverageMIL,
                 'sa': SelfAttentionMIL,
-                'transformermil': TransformerMIL
+                'transformermil': TransformerMIL,
+                'sparseconvmil': SparseConvMIL
                 }     
 
     def __init__(self, args):
         super(MILGene, self).__init__()
         self.args = args
         self.features_tiles = self._get_tile_encoder(args)
-        self.mil = self.models[args.model_name](args)
+        mil = self.models[args.model_name](args)
+        self.mil = self._load_ssl_weights(mil, args)
 
     def _get_tile_encoder(self, args):
         if args.tile_encoder:
@@ -594,23 +630,49 @@ class MILGene(Module):
         """
         In theory, entry is Bs x ntiles x 3 x H x W
         """
-
         if self.args.tile_encoder:
-            bs, nb_tiles = x.shape[:2]
-            x = x.flatten(0, 1)
-            x = self.features_tiles(x)
-            x = torch.mean(x, dim=(-1, -2))
-            x = x.view(bs, nb_tiles, 256)
+            with torch.no_grad():
+                bs, nb_tiles = x['x'].shape[:2]
+                out = x['x'].flatten(0, 1)
+                out = self.features_tiles(out)
+                out = torch.mean(out, dim=(-1, -2))
+                out = out.view(bs, nb_tiles, 256)
+                x['x'] = out
         else:
             x = self.features_tiles(x)
         return x
 
     def forward(self, x):
-        if self.args.constant_size:
-            batch_size, nb_tiles = x.shape[0], x.shape[1]
-        else:
-            batch_size, nb_tiles = 1, x.shape[-2]
+        batch_size, nb_tiles = x['x'].shape[0], x['x'].shape[1]
         x = self.forward_encoder_tile(x)
-        x = x.view(batch_size, nb_tiles, self.args.feature_depth)
         x = self.mil(x)
         return x
+
+    def _load_ssl_weights(self, model, args):
+        if (args.model_path is None) or (not args.ssl_pretraining):
+            return model
+        else:
+            if os.path.basename(args.model_path).startswith('marvin'):
+                state_dict = torch.load(args.model_path, map_location='cpu')
+                state_dict = OrderedDict({k.replace('backbone', 'mil_model'): v for k, v in state_dict.items()
+                                      if not k.startswith('projector') and not k.startswith('predictor')})
+                model.net.load_state_dict(state_dict, strict=False)
+                for name, param in model.net.named_parameters():
+                    if 'classifier' in name:
+                        continue
+                    assert (param == state_dict[name]).all().item(), 'Weights not loaded properly'
+ 
+            else:
+                state_dict = torch.load(args.model_path, map_location='cpu')['state_dict']
+                state_dict = {k.replace('backbone.mil.', ''):w for k,w in state_dict.items() if k.startswith('backbone') and not 'classifier' in k}
+                model.load_state_dict(state_dict, strict=False)
+
+            ## Assert that the weights have been loaded properly
+                for name, param in model.named_parameters():
+                    if 'classifier' in name:
+                        continue
+                    assert (param == state_dict[name]).all().item(), 'Weights not loaded properly'
+                print('Loaded the weigths properly.')
+        return model
+
+

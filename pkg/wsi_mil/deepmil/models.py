@@ -2,7 +2,8 @@
 implementing models. DeepMIL implements a models that classify a whole slide image
 """
 
-from torch.nn import BCELoss, NLLLoss, MSELoss
+
+from torch.nn import BCELoss, NLLLoss, MSELoss, LogSoftmax
 from torch.optim import Adam
 import torch
 import numpy as np
@@ -10,7 +11,7 @@ from sklearn import metrics
 import torch 
 import torchvision
 from abc import ABC, abstractmethod
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 import shutil
 import os
 from .networks import MILGene
@@ -64,7 +65,7 @@ class Model(ABC):
             directory = None
         self.writer = SummaryWriter(directory)
 
-    def update_learning_rate(self, metric):
+    def update_learning_rate(self, metrice):
         for sch in self.schedulers:
             sch.step(metric)
 
@@ -145,6 +146,7 @@ class DeepMIL(Model):
         self.mean_val_loss = 0
         self.model_name = args.model_name
         self.network = self._get_network()
+        self.network.num_class = args.num_class
         optimizer = self._get_optimizer(args)
         self.optimizers = [optimizer]
         self.schedulers = self._get_schedulers(args)
@@ -162,7 +164,21 @@ class DeepMIL(Model):
 
         :return nn.Module: MIL network.
         """
-        net = MILGene(self.args)       
+        if self.args.model_path is not None and self.args.model_name != 'sparseconvmil':
+            ## TODO add that part INSIDE the network initialisation....
+            ckpt = torch.load(self.args.model_path, map_location='cpu')
+            sd = ckpt['state_dict']
+            net = MILGene(self.args)#ckpt['args_mil'])       
+            for k in list(sd.keys()):
+                if k.startswith('module.encoder.'):
+                    sd[k[len('module.encoder.'):]] = sd[k]
+                del sd[k]
+            msg = net.load_state_dict(sd, strict=False)
+            net.mil.classifier.add_module(module=torch.nn.Linear(512, self.args.num_class), name='fc')
+            net.mil.num_class = self.args.num_class 
+            #Because num_class for a MIL-SSL is the representation dimension (512) have to change it to the final fc dim = real number of class of the downstream task
+        else:
+            net = MILGene(args=self.args)
         net = net.to(self.args.device)
         return net
     
@@ -220,13 +236,17 @@ class DeepMIL(Model):
             criterion = NLLLoss().to(self.args.device)
         return criterion
     
-    def _forward_no_grad(self, x):
+    def _forward_no_grad(self, x, xy=None):
         """_forward_no_grad.
 
         :param x: toch.tensor. 
         """
         with torch.no_grad():
-            out = self.network(x)
+            if xy is None:
+                out = self.network(x)
+            else:
+                out = self.network((x, xy))
+            out = LogSoftmax(dim=-1)(out)
         out = out.detach()
         return out
 
@@ -239,7 +259,7 @@ class DeepMIL(Model):
         :param out: torch.tensor or ndarray, output of the MIL network
         :return type(out), pseudo proba.
         """
-        if self.model_name in ['multiheadmulticlass', 'mhmc_conan', 'mhmc_layers']:
+        if self.model_name in ['multiheadmulticlass', 'mhmc_conan', 'mhmc_layers', 'generalmil', 'sparseconvmil']:
             return np.exp(out)
         else:
             return out
@@ -332,7 +352,7 @@ class DeepMIL(Model):
         pred = self.label_encoder.inverse_transform([pred]).item()
         return proba.numpy(), pred
 
-    def evaluate_kdpp(self, x, y, end):
+    def evaluate_kdpp(self, x, y, end, xy=None):
         """
         takes x, y torch.Tensors.
         Predicts on x, stores y and the loss, and the outputs of the network.
@@ -340,11 +360,12 @@ class DeepMIL(Model):
         """
         y = y.to(self.args.device, dtype=torch.int64)
         x = x.to(self.args.device)
-        score = self._forward_no_grad(x).to('cpu')
+        score = self._forward_no_grad(x, xy).to('cpu')
         self.scores_dpp.append(score)
         loss = self.criterion(score, y.to('cpu'))       
         if end:
             scores = torch.cat(self.scores_dpp).mean(0)
+            print(scores)
             y = y.to('cpu', dtype=torch.int64)
             pred = int(self._predict_function(self._to_pseudo_proba(scores)).item())
             pred = self.label_encoder.inverse_transform([pred])
@@ -356,16 +377,14 @@ class DeepMIL(Model):
             self.scores_dpp = []
         return loss.detach().cpu().item()
 
-
-
-    def evaluate(self, x, y):
+    def evaluate(self, x, y, xy=None):
         """
         takes x, y torch.Tensors.
         Predicts on x, stores y and the loss, and the outputs of the network.
         """
         y = y.to(self.args.device, dtype=torch.int64)
         x = x.to(self.args.device)
-        scores = self._forward_no_grad(x)
+        scores = self._forward_no_grad(x, xy)
         y = y.to('cpu', dtype=torch.int64)
         scores = scores.to('cpu')
         pred = int(self._predict_function(self._to_pseudo_proba(scores)).item())
@@ -378,11 +397,14 @@ class DeepMIL(Model):
         self.results_val['preds'] += [pred]
         return loss.detach().cpu().item()
 
-    def forward(self, x):
-        out = self.network(x)
+    def forward(self, x, xy=None):
+        if xy is not None:
+            out = self.network((x, xy))
+        else:
+            out = self.network(x)
         return out
 
-    def optimize_parameters(self, input_batch, target_batch):
+    def optimize_parameters(self, input_batch, target_batch, xy=None):
         """optimize_parameters.
 
         Feed the network with a batch and optimize the parameter.
@@ -394,8 +416,10 @@ class DeepMIL(Model):
         if self.args.constant_size: # We can process a batch as a whole big tensor
             input_batch = input_batch.to(self.args.device)
             target_batch = target_batch.to(self.args.device, dtype=torch.int64)
-            output = self.forward(input_batch)
+            output = self.forward(input_batch, xy)
+            output = LogSoftmax(dim=-1)(output)
             loss = self.criterion(output, target_batch)
+            print(loss)
             loss.backward()
 
         else: # We have to process a batch as a list of tensors (of different sizes)
@@ -403,7 +427,7 @@ class DeepMIL(Model):
             for o, im in enumerate(input_batch):
                 im = im.to(self.args.device)
                 target = target_batch[o].to(self.args.device, dtype=torch.int64)
-                output = self.forward(im)
+                output = self.forward(im, xy)
                 loss += self.criterion(output, target)
             loss = loss/len(input_batch)
             loss.backward()
@@ -421,9 +445,9 @@ class DeepMIL(Model):
                 'inner_counter': self.counter,
                 'args': self.args,
                 'table_data': self.train_loader.dataset.table_data,
+                'files_train': self.train_loader.dataset.files,
                 'best_metrics': self.best_metrics, 
                 'label_encoder': self.train_loader.dataset.label_encoder
                 #'ipca': self.ipca
                 }
         return dictio
-

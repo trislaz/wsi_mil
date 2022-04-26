@@ -125,7 +125,6 @@ def main(raw_args=None):
     models_path = glob(os.path.join(args.path, 'model_best_test_*_repeat_*.pt.tar'), recursive=True)
     model = load_model(models_path[0], 'cpu')
     table = pd.read_csv(model.args.table_data)
- 
     final_res = dict() 
     for model in models_path:
         res = main_test(model_path=model)
