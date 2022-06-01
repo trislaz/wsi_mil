@@ -51,6 +51,7 @@ def val(model, dataloader):
     model.network.eval()
     mean_loss = []
     for input_batch, target_batch in dataloader:
+        input_batch = input_batch.to(model.device).float()
         target_batch = target_batch.to(model.device)
         loss = model.evaluate(input_batch, target_batch)
         mean_loss.append(loss)
@@ -66,6 +67,7 @@ def val_xy(model, dataloader):
     model.network.eval()
     mean_loss = []
     for (input_batch, xy), target_batch in dataloader:
+        input_batch = input_batch.to(model.device).float()
         target_batch = target_batch.to(model.device)
         ## Using the k-dpp evaluation = making several prediction for each 
         ## sample test, to sample the most tiles possible

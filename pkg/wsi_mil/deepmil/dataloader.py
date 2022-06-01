@@ -188,7 +188,7 @@ class EmbeddedWSI_xy(EmbeddedWSI):
                 target_dict[filepath] = np.random.randint(2)
                 sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
                 stratif_dict[filepath] = target_dict[filepath]
-                loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy')))
+                loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy'))).astype(float)
         else:
             table, self.label_encoder = self.transform_target()
             target_dict = dict() #Key = path to the file, value=target
@@ -205,7 +205,7 @@ class EmbeddedWSI_xy(EmbeddedWSI):
                         target_dict[filepath] = np.float32(table[table['ID'] == name]['target'].values[0])
                         sampler_dict[filepath] = TileSampler(args=self.args, wsi_path=filepath, info_folder=self.info)
                         stratif_dict[filepath] = table[table['ID'] == name]['stratif'].values[0]
-                        loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy')))
+                        loc_dict[filepath] = np.load(os.path.join(self.loc, os.path.basename(filepath).replace('_embedded.npy', '_location.npy'))).astype(float)
         self.loc_dict = loc_dict
         return files_filtered, target_dict, sampler_dict, stratif_dict
 

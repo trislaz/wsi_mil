@@ -51,7 +51,7 @@ def test_xy(model, dataloader, table):
     model.network.eval()
     nb_tiles = model.args.nb_tiles
     gt = []
-    totrep = 5
+    totrep = 1
     for (input_batch,xy), target_batch in dataloader:
     ## Because sparseconvemil cannot support a different number of tiles sampled
     ## at training and inference, we performe 10 samples of nb_tiles

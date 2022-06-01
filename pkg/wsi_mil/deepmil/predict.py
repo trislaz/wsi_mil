@@ -23,6 +23,7 @@ def load_model(model_path, device):
     checkpoint = torch.load(model_path, map_location='cpu')
     args = checkpoint['args']
     args.ssl_pretraining=False
+    args.tile_encoder = None
     args.device = device
     model = DeepMIL(args, label_encoder=checkpoint['label_encoder'], ipca=None)##checkpoint['ipca'])
     model.network.load_state_dict(checkpoint['state_dict'])

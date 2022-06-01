@@ -2,7 +2,6 @@
 implementing models. DeepMIL implements a models that classify a whole slide image
 """
 
-
 from torch.nn import BCELoss, NLLLoss, MSELoss, LogSoftmax
 from torch.optim import Adam
 import torch
@@ -359,7 +358,7 @@ class DeepMIL(Model):
         n: number of iteration of sampling (and evaluation)
         """
         y = y.to(self.args.device, dtype=torch.int64)
-        x = x.to(self.args.device)
+        x = x.to(self.args.device).float()
         score = self._forward_no_grad(x, xy).to('cpu')
         self.scores_dpp.append(score)
         loss = self.criterion(score, y.to('cpu'))       
@@ -383,7 +382,7 @@ class DeepMIL(Model):
         Predicts on x, stores y and the loss, and the outputs of the network.
         """
         y = y.to(self.args.device, dtype=torch.int64)
-        x = x.to(self.args.device)
+        x = x.to(self.args.device).float()
         scores = self._forward_no_grad(x, xy)
         y = y.to('cpu', dtype=torch.int64)
         scores = scores.to('cpu')
@@ -414,7 +413,7 @@ class DeepMIL(Model):
         """
         self.set_zero_grad()
         if self.args.constant_size: # We can process a batch as a whole big tensor
-            input_batch = input_batch.to(self.args.device)
+            input_batch = input_batch.to(self.args.device).float()
             target_batch = target_batch.to(self.args.device, dtype=torch.int64)
             output = self.forward(input_batch, xy)
             output = LogSoftmax(dim=-1)(output)

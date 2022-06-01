@@ -17,6 +17,10 @@ from skimage.exposure import histogram
 from skimage._shared.utils import warn
 from staintools import StainNormalizer
 import openslide
+from kornia.augmentation import (
+        ColorJitter, RandomResizedCrop, RandomGrayscale, RandomRotation, 
+        RandomGaussianBlur, RandomGaussianNoise
+        )
 
 from .utils import make_auto_mask, patch_sampling, get_size, visualise_cut, get_image
 
@@ -54,6 +58,7 @@ class ImageTiler:
         self.normalize = args.normalizer is not None
         self.normalizer = self._get_normalizer(args.normalizer)
         self.name_wsi, self.ext_wsi = os.path.splitext(os.path.basename(self.path_wsi))
+        self.from_0 = False
         # If nf is used, it manages the output paths.
         self.outpath = self._set_out_path()
         self.slide = openslide.open_slide(self.path_wsi)
@@ -70,7 +75,7 @@ class ImageTiler:
         if normalizer is None:
             return None
         else:
-            target = np.array(Image.open('/cluster/CBIO/data1/data4/tlazard/data/normalisation_macenko/image_macenko_norm.png'))[:,:,:3]
+            target = np.array(Image.open('/linkhome/rech/gendqp01/uub32zv/image_macenko_norm.png'))[:,:,:3]
             normalizer = StainNormalizer(normalizer)
             normalizer.fit(target)
             return normalizer
@@ -203,6 +208,7 @@ class ImageTiler:
         for o, para in enumerate(param_tiles):
             patch = get_image(slide=self.path_wsi, para=para, numpy=False)
             if self.normalize:
+                print('macenko !')
                 patch = Image.fromarray(self.normalizer.transform(np.array(patch)[:,:,:3]))
             path_tile = os.path.join(self.outpath['tiles'], f"tile_{o}.png")
             patch.save(path_tile)
@@ -220,6 +226,8 @@ class ImageTiler:
         for o, para in enumerate(param_tiles):
             image = get_image(slide=self.slide, para=para, numpy=False)
             image = image.convert("RGB")
+            if self.normalize:
+                image = Image.fromarray(self.normalizer.transform(np.array(image)))
             image = preprocess(image).unsqueeze(0)
             image = image.to(self.device)
             with torch.no_grad():
@@ -227,6 +235,54 @@ class ImageTiler:
             tiles.append(t.cpu().numpy())
         mat = np.vstack(tiles)
         return mat
+
+    def _get_kornia_augs(self, aug=True):
+        if aug:
+            print('aug not shared')
+            augs = [
+                RandomResizedCrop((224, 224), (0.5, 1), p=1),
+                ColorJitter(0.5, 0.5, 0.5, 0.2, p=0.8),
+                RandomGrayscale(p=0.5),
+                RandomGaussianBlur([11,11], [0.1, 2.], p=0.5),
+                RandomGaussianNoise(0, 0.2, p=0.3),
+                RandomRotation([0, 360], p=1)
+                    ]
+            t = transforms.Compose(augs)
+        else:
+            print('no aug')
+            t = Identity()
+        return t
+
+    def imagenet_marvin_tiler(self, param_tiles):
+        model = resnet18(pretrained=True)
+        hook = [0]
+        def hook_l3(m, i, o):
+            hook[0] = o
+        model.layer3.register_forward_hook(hook_l3)
+        model.eval()
+        model.to(self.device)
+        print('normalizing')
+        #preprocess = transforms.Compose([transforms.ToTensor(), transforms.normalize((0.6387467, 0.51136744, 0.6061169), (0.31200314, 0.3260718, 0.30386254))])
+        preprocess = self._get_kornia_augs(False)
+        mat = np.zeros((len(param_tiles), 256))
+        #param_tiles = np.array(param_tiles)[np.random.choice(range(len(param_tiles)), min(4000,len(param_tiles)), replace=False)]
+        for o, para in enumerate(param_tiles):
+            image = get_image(slide=self.slide, para=para, numpy=False)
+            image = image.convert("RGB")
+            if self.from_0:
+                image = image.resize(self.size)
+            if self.normalize:
+                print('Macenko!')
+                patch = Image.fromarray(self.normalizer.transform(np.array(image)[:,:,:3]))
+            image = transforms.ToTensor()(image)
+            image = image.to(self.device)
+            image = preprocess(image)
+            image = transforms.Normalize((0.6387467, 0.51136744, 0.6061169), (0.31200314, 0.3260718, 0.30386254))(image).unsqueeze(0)
+            with torch.no_grad():
+                out = model(image)
+                t = torch.mean(hook[0], dim=(2, 3)).squeeze()
+            mat[o,:] = t.cpu().numpy()
+        np.save(os.path.join(self.outpath['tiles'], '{}_embedded.npy'.format(self.name_wsi)), mat)
 
     def imagenet_tiler(self, param_tiles):
         """imagenet_tiler.

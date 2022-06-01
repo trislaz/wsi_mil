@@ -198,7 +198,7 @@ class GeneralMIL(Module):
         for i in range(self.n_layers_classif):
             mlp.append(LinearBatchNorm(width_fe, width_fe, self.args.dropout, self.args.constant_size))
         self.mlp = Sequential(*mlp)
-        self.classifier = Linear(width_fe, self.num_class)
+        self.linear_classifier = Linear(width_fe, self.num_class)
 
     def _get_first_dim(self, args):
         if args.pooling_fct == 'conan':
@@ -220,7 +220,7 @@ class GeneralMIL(Module):
                 x = x.view((bs, nbt, -1))
             slide = self.pooling_function(x)
             out = self.mlp(slide)
-        out = self.classifier(out)
+        out = self.linear_classifier(out)
         out = out.view((bs, self.num_class))
         return out
 
@@ -576,7 +576,7 @@ class SparseConvMIL(Module):
         self.model_path = args.model_path
         resnet_model, _ = models_marvin.get_resnet_model('resnet18', 'imagenet')
         _, sparse_subresnet = models_marvin.cut_resnet_dense_sparse(resnet_model, 4)
-        pooling_model = models_marvin.SparseConvMIL(sparse_subresnet, 512, False) #downsample 500 before
+        pooling_model = models_marvin.SparseConvMIL(sparse_subresnet, args.downmap, False) #downsample 500 before
         n_classes = args.num_class
         linear_classifier = torch.nn.Linear(512, n_classes, False)
         freeze_pooling_model = args.freeze_pooling
@@ -584,7 +584,10 @@ class SparseConvMIL(Module):
         self.net = whole_model
 
     def forward(self, x):
-        x = self.net(x['x'], x['loc'])
+        if isinstance(x, dict):
+            x = self.net(x['x'], x['loc'])
+        else:
+            x = self.net(*x)
         return x
 
 class MILGene(Module):
@@ -643,7 +646,6 @@ class MILGene(Module):
         return x
 
     def forward(self, x):
-        batch_size, nb_tiles = x['x'].shape[0], x['x'].shape[1]
         x = self.forward_encoder_tile(x)
         x = self.mil(x)
         return x
@@ -652,15 +654,22 @@ class MILGene(Module):
         if (args.model_path is None) or (not args.ssl_pretraining):
             return model
         else:
-            if os.path.basename(args.model_path).startswith('marvin'):
+            if args.whoswho == 'marvin':
                 state_dict = torch.load(args.model_path, map_location='cpu')
-                state_dict = OrderedDict({k.replace('backbone', 'mil_model'): v for k, v in state_dict.items()
-                                      if not k.startswith('projector') and not k.startswith('predictor')})
-                model.net.load_state_dict(state_dict, strict=False)
+                if 'state_dict' in state_dict:
+                    state_dict = state_dict['state_dict']
+                if '0.0.0' in list(state_dict.keys())[0]: #pfffff moche mais bon
+                    to_replace = 'pooling.O'
+                else:
+                    to_replace = 'pooling'
+                state_dict_bis = {k.replace('backbone', 'mil_model').replace('pooling.0', 'pooling'): v for k, v in state_dict.items()#.replace('pooling.0', 'pooling')
+                                        if not k.startswith('projector') and not k.startswith('predictor')}
+                model.net.load_state_dict(state_dict_bis, strict=False)
                 for name, param in model.net.named_parameters():
                     if 'classifier' in name:
                         continue
-                    assert (param == state_dict[name]).all().item(), 'Weights not loaded properly'
+                    assert (param == state_dict_bis[name]).all().item(), 'Weights not loaded properly'    
+                print('Loaded the weigths properly.')
  
             else:
                 state_dict = torch.load(args.model_path, map_location='cpu')['state_dict']
