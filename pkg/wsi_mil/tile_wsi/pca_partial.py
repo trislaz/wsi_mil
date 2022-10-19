@@ -51,7 +51,7 @@ def main(raw_args=None):
             batch = []
         else:
             batch.append(mat)
-    ipca.partial_fit(X=np.vstack(batch))
+
     msg = " ----------------  RESULTS -------------------- \n"
     s = 0
     for i,o in enumerate(ipca.explained_variance_ratio_, 1):
