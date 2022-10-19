@@ -37,7 +37,7 @@ Correspond to the level of the pyramidal format.
 * `size`: `int` size of the squared tiles, in pixel.
 * `tiler`: tiler to use. simple -> just cuts the WSI in png.
 imagenet -> encodes the tiles with a ResNet18 pre-trained on imagenet.
-moco -> encodes the tiles with a ResNet18 pre-trained with MoCo -add ref-.
+moco -> encodes the tiles with a ResNet18 pre-trained with MoCo (need a pretrained model). 
 * `model_path`: `str` path to the MoCo model. Use only when `tiler == moco`
 * `path_outputs`: `str` path to store the outputs.
 
