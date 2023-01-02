@@ -1,5 +1,6 @@
 # Whole Slide Image processing with deep-learning ![](header.png)
 
+This repository contains the code for the paper [Deep learning identifies morphological patterns of homologous recombination deficiency in luminal breast cancers from whole slide images](https://www.cell.com/cell-reports-medicine/fulltext/S2666-3791(22)00436-0).
 
 In order to use the scripts present in this repository, make sure that you are working in a python environment that satisfies the requirements of
 `requirement.txt`.
