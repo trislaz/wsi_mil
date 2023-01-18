@@ -138,7 +138,7 @@ class TileSeeker(BaseVisualizer):
         self.max_per_slides = max_per_slides
         self.att_thres = att_thres
         self.store = store
-        self.path_raw = "/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag/"
+        self.path_raw = self.model.args.raw_path
 
         ## Model parameters
         assert self.model.args.num_heads == 1, 'you can\'t extract a best tile when using the multiheaded attention'
@@ -185,7 +185,7 @@ class TileSeeker(BaseVisualizer):
             selection = np.where(tw >= otsu)[0]
         elif isinstance(self.att_thres, int):
             _, ind = torch.sort(torch.Tensor(tw))
-            size_select = min(thres_otsu, len(ind))#int(len(ind)/100)
+            size_select = min(thres_otsu, len(ind))
             selection = set(ind[-size_select:].cpu().numpy())
         
         # Find attention scores to filter out of distribution tiles
@@ -288,11 +288,9 @@ class TileSeeker(BaseVisualizer):
 class ConsensusTileSeeker(TileSeeker):
     def __init__(self, model, n_best, min_prob=False, max_per_slides=None, path_emb=None, att_thres='otsu'):
         super(ConsensusTileSeeker, self).__init__(model[0], n_best, min_prob, max_per_slides, path_emb, att_thres, False)
-        self.path_raw = "/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag/"
         tile_seekers = []
         for m in model:
             ts = TileSeeker(m, n_best, min_prob, max_per_slides, path_emb, att_thres, False)
-            ts.path_raw = "/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag/"
             tile_seekers.append(ts)
         self.seekers = tile_seekers
         self.model_name = tile_seekers[0].model.args.model_name

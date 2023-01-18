@@ -39,7 +39,7 @@ def main(projection, path_im, path_size=None, selection=None, palette='magma_r')
         size = 40
     cmap = plt.cm.RdYlGn
     gridsize = (2, 3)
-    image_path = np.asarray([glob('{}/{}_*.jpg'.format(path_im, o))[0] for o in range(projection.shape[0])])
+    image_path = np.asarray([glob('{}/tile_{}.jpg'.format(path_im, o))[0] for o in range(projection.shape[0])])
     fig = plt.figure(figsize=(15, 15))
     ax = plt.subplot2grid(gridsize, (0,0), rowspan=2, colspan=2, fig=fig)
     ax.set_navigate(True)
