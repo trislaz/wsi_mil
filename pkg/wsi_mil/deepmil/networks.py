@@ -580,7 +580,6 @@ class MILGene(Module):
         else:
             batch_size, nb_tiles = 1, x.shape[-2]
         x = self.features_tiles(x)
-        print(x.shape)
         x = x.view(batch_size, nb_tiles, self.args.feature_depth)
         x = self.mil(x)
         return x
