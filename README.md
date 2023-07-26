@@ -181,11 +181,14 @@ have a look at the WSI features the networks looked at.
 The script `seek_best_tiles.py` allows the extraction of the most predictive tiles for each value of the target variables.
 
 ```
-python ./scripts/seek_best_tiles.py --model /path/to/model/checkpoint.pt.tar --n_best 1000 --max_per_slides 20
+python ./scripts/seek_best_tiles.py --model /path/to/model/ --n_best 1000 --max_per_slides 20 --consensus
 ```
 
+You can extract tiles using a single model (in which case, specify the model with --model) or the consensus of the best models. 
+We recommend always using the `--consensus` flag.
+
 Help concerning the different arguments is available with `python ./scripts/seek_best_tiles.py -h`.
-You must set `max_per_slide` and `n_best` such that `max_per_slide` * `N` >> `n_best`, N being the size of the dataset.
+You must set `max_per_slide` and `n_best` such that `max_per_slide` * `N` >> `n_best`, N being the size of the dataset (in number of WSIs).
 
 The outputs of this visualization process are stored in the folder where is located the tested model, for example in 'summaries_model_best_test_0_rep_0'
 if you used the repetition 0 of the model trained on the split 0.
