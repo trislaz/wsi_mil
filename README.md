@@ -133,6 +133,11 @@ We observed a regularizing effect of this parameter. We thus recommend setting i
 
 The default training protocol is the one developed in the article. It uses a nested cross-validation scheme to estimate the prediction performances.
 To launch a training, use `./scripts/train_cross_val.py`.
+
+```
+python train_cross_val.py --out ./outputs --name ID-of-training --rep 1 --config config_default.yaml --n_ensemble 1
+```
+
 The arguments to feed this script are:
 
 * `out` : path for the output of the training process.
