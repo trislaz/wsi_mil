@@ -189,6 +189,8 @@ We recommend always using the `--consensus` flag.
 
 Help concerning the different arguments is available with `python ./scripts/seek_best_tiles.py -h`.
 You must set `max_per_slide` and `n_best` such that `max_per_slide` * `N` >> `n_best`, N being the size of the dataset (in number of WSIs).
+A good rule of thumb for choosing max_per_slide is to set it such as at least 1/10th of your dataset's WSI is represented in the visualization. 
+For instance, for a dataset of 1000 slides, if we want to extract 1000 tiles per class, set the max_per_slide to 10.
 
 The outputs of this visualization process are stored in the folder where is located the tested model, for example in 'summaries_model_best_test_0_rep_0'
 if you used the repetition 0 of the model trained on the split 0.
