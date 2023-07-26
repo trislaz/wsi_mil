@@ -33,7 +33,7 @@ a directory.
 Here is a usage example:
 
 ```python
-python ./scripts/main_tiling.py --path_wsi /folder/with/wsi --size 224 --tiler simple --level 2 path_outputs /my/output/folder
+python ./scripts/main_tiling.py --path_wsi /folder/with/wsi --size 224 --tiler simple --level 2 --path_outputs /my/output/folder
 ```
 
 The possible arguments are :
