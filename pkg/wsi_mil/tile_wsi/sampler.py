@@ -1,8 +1,6 @@
 #%%
 #from .tile_functionnal import compute_distance
 from scipy.ndimage import rotate, distance_transform_bf
-from dppy.finite_dpps import FiniteDPP
-from .pds import PoissonDiskSampling
 from sklearn.gaussian_process.kernels import PairwiseKernel
 import numpy as np
 import pickle
@@ -24,15 +22,6 @@ class TileSampler:
         name_wsi = name_wsi.split('_embedded')[0]
         embedded_wsi = np.load(wsi_path)
         self.total_tiles = embedded_wsi.shape[0]
-        if args.sampler == 'dpp':
-            self.dpp = FiniteDPP('likelihood', **{'L_gram_factor': embedded_wsi[:,:50].T})
-            self.dpp.sample_exact_k_dpp(size=args.nb_tiles)
-        if args.sampler == 'pds':
-            print('umap_compute')
-            embedded_wsi = np.load(wsi_path)
-            #um = umap.UMAP(n_components=2).fit_transform(embedded_wsi[:,:250])
-            self.pds = PoissonDiskSampling(X=embedded_wsi[:,:10], r0=4)
-            self.pds.sample(args.nb_tiles)
         self.name_wsi = name_wsi
         self.path_wsi = wsi_path
         if args.sampler in ['predmap', 'predmap_all']:
@@ -61,11 +50,9 @@ class TileSampler:
         indices = torch.randint(0, self.total_tiles, (nb_tiles, ))
         return indices
 
-    def dpp_sampler(self, nb_tiles):
         indices = self.dpp.sample_exact_k_dpp(size=nb_tiles)
         return indices
 
-    def pds_sampler(self, nb_tiles):
         indices = self.pds.sample(nb_tiles)
         return indices
 
