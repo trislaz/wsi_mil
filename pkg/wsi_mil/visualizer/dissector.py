@@ -197,10 +197,7 @@ class TileSeeker(BaseVisualizer):
         table = self.table
         wsi_ID = table['ID'].values
         for n, o in enumerate(wsi_ID):
-            try:
-                self.forward(o)
-            except:
-                print('exception: ', o)
+            self.forward(o)
         return self
 
     def store_best(self, inp, out, info, selection_att, min_prob=False, max_per_slides=None):
@@ -228,7 +225,7 @@ class TileSeeker(BaseVisualizer):
             if s not in selection_att:
                 continue
             # for each class
-            for o in range(self.label_encoder.classes_):
+            for o in range(len(self.label_encoder.classes_)):
                 # If the score for class o at tile s is bigger than the smallest 
                 # stored value: put in storage
                 is_pos = sgn * out[s, o] > 0
@@ -248,7 +245,7 @@ class TileSeeker(BaseVisualizer):
             self.store_attention[o] += list(np.array(tmp_attentionstore[o])[selection])
             self.store_preclassif[o] += list(np.array(tmp_preclassifstore[o])[selection])
 
-        for o in range(self.label_encoder.classes_):
+        for o in range(len(self.label_encoder.classes_)):
             indices_best = np.argsort(self.store_score[o])[::sgn][-self.n_best:]
             self.store_score[o] = list(np.array(self.store_score[o])[indices_best])
             self.store_tile[o] = list(np.array(self.store_tile[o])[indices_best])

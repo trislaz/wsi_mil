@@ -1,4 +1,4 @@
-from deepmil.predict import load_model
+from wsi_mil.deepmil.predict import load_model
 import matplotlib.pyplot as plt
 from scipy.ndimage import rotate, distance_transform_bf
 import matplotlib.patches as patches
