@@ -97,7 +97,7 @@ Before running your experiment, you will have to manually split the dataset into
 For that aim, use  `./scripts/split_dataset.py`:
 
 ```bash
-python --table /path/master/table --target_name output_variable --equ_vars bias1,bias2,bias3 -k 5
+python ./scripts.split_dataset.py --table /path/master/table --target_name output_variable --equ_vars bias1,bias2,bias3 -k 5
 ```
 
 `target_name` has to be set with the name of the column containing the ground truth label.
