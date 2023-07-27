@@ -228,8 +228,7 @@ class TileSeeker(BaseVisualizer):
             for o in range(len(self.label_encoder.classes_)):
                 # If the score for class o at tile s is bigger than the smallest 
                 # stored value: put in storage
-                is_pos = sgn * out[s, o] > 0
-                if is_pos and ((len(self.store_score[o]) < self.n_best) or (sgn * out[s,o] >= sgn * self.store_score[o][0])):
+                if (len(self.store_score[o]) < self.n_best) or (sgn * out[s,o] >= sgn * self.store_score[o][0]):
                     tmp_infostore[o].append(info['paradict'][s])
                     tmp_tilestore[o].append(inp[s,:])
                     tmp_attentionstore[o].append(self.hooker.tiles_weights[s, :])
