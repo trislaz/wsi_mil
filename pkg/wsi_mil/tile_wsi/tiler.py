@@ -280,7 +280,7 @@ class ImageTiler:
 
         :param param_tiles: list, output of the patch_sampling.
         """
-        model = resnet50()
+        model = resnet18()
         checkpoint = torch.load(self.model_path, map_location='cpu')
         # rename moco pre-trained keys
         state_dict = checkpoint['state_dict']
