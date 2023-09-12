@@ -60,23 +60,23 @@ def predict_test(model_path=None, data_path=None,data_table=None):
     confusion_mat = metrics.confusion_matrix(y_true=true_labels, y_pred=predicted_labels)
     return results, confusion_mat, dataloader.dataset.target_correspondance 
 
-def predict(model_path, data_path):
+def predict(model, data_path):
     results = []
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = load_model(model_path, device)
     wsis = glob(os.path.join(data_path, 'mat', '*.npy'))
     assert wsis, "The images have to be stored directly into data_path, with a npy extension.x:  data_path/mat/slide_1.npy"
+    results = {'name': [], 'pred': [], 'proba': []}
     for wsi in wsis:
-        name = os.path.basename(wsi).replace('.npy', '.tif')
-        wsi = preprocessing(wsi, device, model.ipca)
+        name = os.path.basename(wsi).replace('.npy', '')
+        wsi = preprocessing(wsi, device)
         proba, y_hat = model.predict(wsi)
-        results.append({'filename': name, 'pred': y_hat, 'proba':proba[0][0]})
-    results_df = pd.DataFrame(results)
-    return results_df
+        results['name'].append(name)
+        results['pred'].append(y_hat)
+        results['proba'].append(proba)
+    return results
 
-def preprocessing(wsi, device, ipca):
+def preprocessing(wsi, device):
     wsi = np.load(wsi)
-    wsi = ipca.transform(wsi)
     wsi = torch.Tensor(wsi)
     wsi = wsi.unsqueeze(0)
     wsi = wsi.to(device).float()
