@@ -13,6 +13,7 @@ from .arguments import get_arguments
 from .models import DeepMIL
 from .dataloader import EmbeddedWSI, Dataset_handler
 from collections import MutableMapping
+from sklearn.preprocessing import Normalizer
 
 def load_model(model_path, device):
     """Loads and prepare a learned model for prediction.
@@ -76,7 +77,9 @@ def predict(model, data_path):
     return results
 
 def preprocessing(wsi, device):
+    norm = Normalizer()
     wsi = np.load(wsi)
+    wsi = norm.fit_transform(wsi)
     wsi = torch.Tensor(wsi)
     wsi = wsi.unsqueeze(0)
     wsi = wsi.to(device).float()
