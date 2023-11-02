@@ -20,6 +20,7 @@ import pandas as pd
 from .model_hooker import HookerMIL
 from .utils import make_background_neutral, add_titlebox, set_axes_color
 from .model_hooker import HookerMIL
+from pathlib import Path
 import os 
 
 class BaseVisualizer(ABC):
@@ -53,13 +54,13 @@ class BaseVisualizer(ABC):
 
     def _get_info(self, wsi_ID, path_emb):
         wsi_info_path = os.path.join(path_emb, 'info')
-        #infomat = os.path.join(wsi_info_path, wsi_ID + '_infomat.npy')
-        #infomat = np.load(infomat)
-        #infomat = infomat.T 
+        infomat = os.path.join(wsi_info_path, wsi_ID + '_infomat.npy')
+        infomat = np.load(infomat)
+        infomat = infomat.T 
         with open(os.path.join(wsi_info_path, wsi_ID+ '_infodict.pickle'), "rb") as f:
             infodict = pickle.load(f)
             infodict = self.add_name_to_dict(infodict, wsi_ID) 
-        return {'paradict': infodict}
+        return {'paradict': infodict, "infomat" : infomat}
     
     def add_name_to_dict(self, dico, name):
         """
@@ -139,6 +140,8 @@ class TileSeeker(BaseVisualizer):
         self.att_thres = att_thres
         self.store = store
         self.path_raw = self.model.args.raw_path
+        self.attention_scores = None
+        self.decision_scores = None
 
         ## Model parameters
         assert self.model.args.num_heads == 1, 'you can\'t extract a best tile when using the multiheaded attention'
@@ -187,6 +190,9 @@ class TileSeeker(BaseVisualizer):
             _, ind = torch.sort(torch.Tensor(tw))
             size_select = min(thres_otsu, len(ind))
             selection = set(ind[-size_select:].cpu().numpy())
+
+        self.attention_scores = tw
+        self.decision_scores = logits
         
         # Find attention scores to filter out of distribution tiles
         if self.store:
@@ -348,6 +354,55 @@ class ConsensusTileSeeker(TileSeeker):
         # Find attention scores to filter out of distribution tiles
         self.store_best(x.cpu().numpy(), logits, info, selection, min_prob=self.min_prob, max_per_slides=self.max_per_slides)
         return self
+
+class HeatmapMaker:
+    def __init__(self, model, path_emb=None):
+        model = Path(model).glob('*.pt.tar')
+     # super(HeatmapMaker, self).__init__(model[0], path_emb)
+        tile_seekers = []
+        for m in model:
+            ts = TileSeeker(m, 0, 0, 0, path_emb, 0, False)
+            tile_seekers.append(ts)
+        self.seekers = tile_seekers
+        self.model_name = tile_seekers[0].model.args.model_name
+        self.target_name = tile_seekers[0].model.args.target_name
+
+    def forward(self, wsi_ID):
+            """forward.
+            Execute a forward pass through the MLP classifier. 
+            Stores the n-best tiles for each class.
+            :param wsi_ID: wsi_ID as appearing in the table_data.
+            """
+            if type(wsi_ID) is int:
+                x = glob(os.path.join(self.path_emb,'mat_pca', '*_embedded.npy'))[wsi_ID]
+                wsi_ID = os.path.basename(x).split('_embedded')[0]
+                x = np.load(x)
+            elif isinstance(wsi_ID, np.ndarray):
+                x = wsi_ID
+            else:
+                x = os.path.join(self.path_emb,  'mat_pca', wsi_ID+'_embedded.npy')
+                x = np.load(x)
+    
+            info = self._get_info(wsi_ID, path_emb=self.path_emb)
+    
+            #process each images
+            x = self._preprocess(x)
+            outs = []
+            logits = []
+            attention = []
+            for s in self.seekers:
+                outs.append(s.classifier(x).detach().cpu().numpy())
+                logits.append(s.hooker.scores)
+                s.attention(x.unsqueeze(0))
+                attention.append(s.hooker.tiles_weights)
+            out = np.mean(outs, 0)
+            logits = np.mean(logits, 0)
+            tw = np.mean(attention, 0)
+            #filling the hooker with mean values
+            return tw, logits
+
+
+
 
 
 
