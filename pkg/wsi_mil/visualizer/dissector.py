@@ -1,4 +1,5 @@
 from wsi_mil.deepmil.predict import load_model
+from matplotlib.colors import Normalize
 from scipy.special import softmax
 from openslide import open_slide 
 from sklearn.preprocessing import StandardScaler
@@ -19,12 +20,13 @@ import pickle
 import pandas as pd
 from .model_hooker import HookerMIL
 from .utils import make_background_neutral, add_titlebox, set_axes_color
-from .model_hooker import HookerMIL
 from pathlib import Path
 import os 
+from scipy.ndimage import zoom
+from PIL import Image
 
 class BaseVisualizer(ABC):
-    def __init__(self, model, path_emb=None):
+    def __init__(self, model, path_emb=None, path_raw=None):
         ## Model loading
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = load_model(model, self.device)
@@ -35,7 +37,7 @@ class BaseVisualizer(ABC):
         self.table = self._load_table(self.model.table_data)
         self.path_emb = self.model.args.wsi if path_emb is None else path_emb
         self.path_emb_mat = os.path.join(self.path_emb)
-        self.path_raw = '/gpfs7kw/linkhome/rech/gendqp01/uub32zv/data/tcga/tcga_breast_diag'#self.model.args.raw_path
+        self.path_raw = self.model.args.raw_path if path_raw is None else path_raw
         self.num_class = self.model.args.num_class
         self.num_heads = self.model.args.num_heads
         self.target_name = self.model.args.target_name
@@ -355,10 +357,10 @@ class ConsensusTileSeeker(TileSeeker):
         self.store_best(x.cpu().numpy(), logits, info, selection, min_prob=self.min_prob, max_per_slides=self.max_per_slides)
         return self
 
-class HeatmapMaker:
-    def __init__(self, model, path_emb=None):
-        model = Path(model).glob('*.pt.tar')
-     # super(HeatmapMaker, self).__init__(model[0], path_emb)
+class HeatmapMaker(BaseVisualizer):
+    def __init__(self, model, path_emb=None, path_raw=None):
+        model = list(Path(model).glob('*.pt.tar'))
+        super(HeatmapMaker, self).__init__(model[0], path_emb, path_raw)
         tile_seekers = []
         for m in model:
             ts = TileSeeker(m, 0, 0, 0, path_emb, 0, False)
@@ -366,40 +368,137 @@ class HeatmapMaker:
         self.seekers = tile_seekers
         self.model_name = tile_seekers[0].model.args.model_name
         self.target_name = tile_seekers[0].model.args.target_name
+        self.path_emb = tile_seekers[0].path_emb
 
     def forward(self, wsi_ID):
-            """forward.
-            Execute a forward pass through the MLP classifier. 
-            Stores the n-best tiles for each class.
-            :param wsi_ID: wsi_ID as appearing in the table_data.
-            """
-            if type(wsi_ID) is int:
-                x = glob(os.path.join(self.path_emb,'mat_pca', '*_embedded.npy'))[wsi_ID]
-                wsi_ID = os.path.basename(x).split('_embedded')[0]
-                x = np.load(x)
-            elif isinstance(wsi_ID, np.ndarray):
-                x = wsi_ID
-            else:
-                x = os.path.join(self.path_emb,  'mat_pca', wsi_ID+'_embedded.npy')
-                x = np.load(x)
+        """forward.
+        Execute a forward pass through the MLP classifier. 
+        Stores the n-best tiles for each class.
+        :param wsi_ID: wsi_ID as appearing in the table_data.
+        """
+        if type(wsi_ID) is int:
+            x = glob(os.path.join(self.path_emb,'mat_pca', '*_embedded.npy'))[wsi_ID]
+            wsi_ID = os.path.basename(x).split('_embedded')[0]
+            x = np.load(x)
+        elif isinstance(wsi_ID, np.ndarray):
+            x = wsi_ID
+        else:
+            x = os.path.join(self.path_emb,  'mat_pca', wsi_ID+'_embedded.npy')
+            x = np.load(x)
+        
+        info = self._get_info(wsi_ID, path_emb=self.path_emb)
+        
+        #process each images
+        x = self._preprocess(x)
+        outs = []
+        logits = []
+        attention = []
+        for s in self.seekers:
+            outs.append(s.classifier(x).detach().cpu().numpy())
+            logits.append(s.hooker.scores)
+            s.attention(x.unsqueeze(0))
+            attention.append(s.hooker.tiles_weights)
+        out = np.mean(outs, 0)
+        logits = np.mean(logits, 0)
+        tw = np.squeeze(np.mean(attention, 0))
+        #filling the hooker with mean values
+        return tw, logits, info['infomat']
+
+    def make_heatmap(self, wsi_ID, downsample_factor=16):
+        """
+        Generates and saves a heatmap overlay image for the given whole-slide image ID.
+        
+        Args:
+        wsi_ID (str): The identifier for the whole-slide image.
+        """
+        heatmaps_per_class = {}
+        tw, logits, infomat = self.forward(wsi_ID)
+        for class_idx in range(logits.shape[1]):
+            # Softmax the attention scores
+            maxtw = softmax(tw)
+            heatmap_scores = maxtw * logits[:, class_idx]
+            heatmaps_per_class[self.label_encoder.classes_[class_idx]], background = self.create_heatmap(infomat, heatmap_scores)
+
+        max_over_classes = np.max(np.stack([heatmap for heatmap in heatmaps_per_class.values()]))
+        min_over_classes = np.min(np.stack([heatmap for heatmap in heatmaps_per_class.values()]))
+
+        for target in self.label_encoder.classes_:
+            overlay = self.overlay_heatmap_on_thumbnail(wsi_ID, heatmaps_per_class[target], downsample_factor, background, max_over_classes, min_over_classes)
+            overlay.save(f"{wsi_ID}_class_{target}_heatmap.png")
+
+        # Attention HM:
+        heatmap_normalized, background = self.create_heatmap(infomat, tw)
+        overlay = self.overlay_heatmap_on_thumbnail(wsi_ID, heatmap_normalized, downsample_factor, background, np.max(heatmap_normalized), np.min(heatmap_normalized))
+        overlay.save(f"{wsi_ID}_attention_heatmap.png")
+
+        
+    def create_heatmap(self, infomat, heatmap_scores):
+        """
+        Creates a normalized heatmap from scores and an infomat matrix.
+        
+        Args:
+        infomat (np.ndarray): A matrix mapping tile indices to their position.
+        heatmap_scores (np.ndarray): An array containing the scores for each tile.
+        
+        Returns:
+        np.ndarray: A normalized heatmap as a 2D numpy array.
+        """
+        heatmap = np.zeros_like(infomat, dtype=np.float32)
+        unique_tiles = np.unique(infomat)
+        for tile in unique_tiles:
+            if tile >= 0:
+                tile = int(tile)
+                heatmap[infomat == tile] = heatmap_scores[tile]
+        background = infomat == -1
+        return heatmap, background
     
-            info = self._get_info(wsi_ID, path_emb=self.path_emb)
-    
-            #process each images
-            x = self._preprocess(x)
-            outs = []
-            logits = []
-            attention = []
-            for s in self.seekers:
-                outs.append(s.classifier(x).detach().cpu().numpy())
-                logits.append(s.hooker.scores)
-                s.attention(x.unsqueeze(0))
-                attention.append(s.hooker.tiles_weights)
-            out = np.mean(outs, 0)
-            logits = np.mean(logits, 0)
-            tw = np.mean(attention, 0)
-            #filling the hooker with mean values
-            return tw, logits
+    def overlay_heatmap_on_thumbnail(self, wsi_ID, heatmap, downsample_factor, background, max_over_classes, min_over_classes):
+        """
+        Overlays the normalized heatmap onto a higher magnification thumbnail of the whole-slide image and saves it.
+        
+        Args:
+        wsi_ID (str): The identifier for the whole-slide image.
+        heatmap_normalized (np.ndarray): A normalized heatmap as a 2D numpy array.
+        downsample_factor (int): The factor by which the heatmap should be downsampled for overlay.
+        """
+        wsi_path = glob(os.path.join(self.path_raw, wsi_ID + '.*'))[0]
+        wsi_image = open_slide(wsi_path)
+        level = wsi_image.get_best_level_for_downsample(downsample_factor)
+        thumbnail = wsi_image.read_region((0, 0), level, wsi_image.level_dimensions[level])
+        # Thumbnail in grey values
+        thumbnail = thumbnail.convert("L").convert('RGB')
+
+        scale_factor_y = thumbnail.size[1] / heatmap.shape[0]
+        scale_factor_x = thumbnail.size[0] / heatmap.shape[1]
+
+        # Normalize the heatmap to the desired range.
+        norm = Normalize(vmin=min_over_classes, vmax=max_over_classes)
+        heatmap_normalized = norm(heatmap)
+        # heatmap_normalized = heatmap
+
+        heatmap_resized = zoom(heatmap_normalized, (scale_factor_y, scale_factor_x), order=0) # order = 0 if you want to keep the original tile geometry
+        #heatmap_resized = skimage.transform.resize(heatmap_normalized.T, thumbnail.size).T
+        background_resized = zoom(background, (scale_factor_y, scale_factor_x), order=0)
+
+        # Apply the colormap only on non-background pixels
+        colormap = plt.get_cmap('coolwarm')
+
+        heatmap_filtered = np.ma.masked_array(heatmap_resized, mask=background_resized)
+        colored_heatmap = colormap(heatmap_filtered, bytes=True)
+        colored_heatmap[..., :3][background_resized] = 0
+        colored_heatmap_pil = Image.fromarray(colored_heatmap[..., :3])
+
+        ## Make the background neutral
+        neutral_color = [0, 0, 0]  # Gray color for neutral background
+        neutral_background = Image.new("RGB", colored_heatmap_pil.size, color=tuple(neutral_color))
+        mask = Image.fromarray((~background_resized).astype(np.uint8) * 255)  # Invert mask for correct transparency
+        combined_heatmap = Image.composite(colored_heatmap_pil, neutral_background, mask)
+        thumbnail_w_background = Image.composite(thumbnail, neutral_background, mask)
+        combined_heatmap = Image.blend(thumbnail_w_background, combined_heatmap, alpha=0.65)
+        return combined_heatmap
+
+
+
 
 
 

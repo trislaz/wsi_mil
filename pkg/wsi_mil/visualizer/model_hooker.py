@@ -33,7 +33,7 @@ class HookerMIL:
             """
             hooks the output of the attention heads
             """ 
-            tiles_weights = o
+            tiles_weights = i[0]
             tiles_weights = tiles_weights.view(-1, self.num_heads)
             self.tiles_weights = tiles_weights.detach().cpu().numpy()
         return hook_attention
@@ -70,9 +70,8 @@ class HookerMIL:
             if list(layer.children()):
                 self.place_hooks(layer)
             if name == 'attention':
-                hook_layer = list(layer.children())[-1]
+                hook_layer = list(layer.children())[-1] #last layer is softmax
                 hook_layer.register_forward_hook(self._get_attention_hook())
-                print('Hook in place, captain')
             if name == 'classifier':
                 hook_layer =  list(layer.children())[0]
                 hook_layer.register_forward_hook(self._get_average_hook())
